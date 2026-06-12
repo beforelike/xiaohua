@@ -28,6 +28,7 @@ async function createConfig(
     IMAGE_PROVIDER: imageProvider,
     SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
     ASSET_CACHE_DIR: directory,
+    STATIC_DIR: '',
     ASR_PROVIDER: 'mock',
   } satisfies AppConfig
 }

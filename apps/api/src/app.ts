@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
 import { ZodError } from 'zod'
@@ -11,6 +14,8 @@ import { generateAsset, readAsset } from './services/imageGeneration'
 import { parseLlmCommand } from './services/llmCommandParser'
 import { parseRuleCommand } from './services/ruleCommandParser'
 import { checkAsrHealth, transcribeAudio } from './services/asrProvider'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 interface RateLimitBucket {
   windowStartedAt: number
@@ -228,6 +233,23 @@ export function createApp(config: AppConfig) {
       next(error)
     }
   })
+
+  // Serve web frontend static files
+  const staticDir = config.STATIC_DIR
+    ? path.resolve(config.STATIC_DIR)
+    : path.resolve(__dirname, '..', '..', 'web', 'dist')
+
+  if (existsSync(staticDir)) {
+    app.use(express.static(staticDir))
+    // SPA fallback: serve index.html for non-API GET requests
+    app.use((request, response, next) => {
+      if (request.method === 'GET' && !request.path.startsWith('/api/')) {
+        response.sendFile(path.join(staticDir, 'index.html'))
+      } else {
+        next()
+      }
+    })
+  }
 
   app.use((_request, response) => {
     response.status(404).json({

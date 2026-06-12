@@ -12,6 +12,7 @@ const localConfig = {
   IMAGE_PROVIDER: 'mock',
   SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
   ASSET_CACHE_DIR: '.cache/test-assets',
+  STATIC_DIR: '',
   ASR_PROVIDER: 'local',
   ASR_BASE_URL: 'http://127.0.0.1:9000',
 } satisfies AppConfig

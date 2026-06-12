@@ -44,6 +44,7 @@ const envSchema = z.object({
     .default('stable-diffusion-webui'),
   SD_WEBUI_BASE_URL: z.url().default('http://127.0.0.1:7860'),
   ASSET_CACHE_DIR: z.string().min(1).default('.cache/assets'),
+  STATIC_DIR: z.string().default(''),
   ASR_PROVIDER: z.enum(['local', 'mock']).default('mock'),
   ASR_BASE_URL: optionalUrl,
 })
