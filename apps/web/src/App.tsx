@@ -13,7 +13,7 @@ import {
   parseProject,
 } from './features/project/downloads'
 import { resolveTarget } from './features/commands/resolveTarget'
-import { useSpeechRecognition } from './features/voice/useSpeechRecognition'
+import { useVoiceInput } from './features/voice/useVoiceInput'
 import { useProjectStore } from './stores/projectStore'
 
 function App() {
@@ -220,7 +220,7 @@ function App() {
     event.target.value = ''
   }
 
-  const speech = useSpeechRecognition((transcript) => {
+  const speech = useVoiceInput((transcript) => {
     setText(transcript)
     setStatus('语音已识别，请确认后执行。')
   })
@@ -334,6 +334,9 @@ function App() {
             {lastResult && status.startsWith('准备好了')
               ? lastResult.message
               : status}
+          </p>
+          <p className={`voice-status phase-${speech.status.phase}`}>
+            {speech.status.message}
           </p>
           {pending ? (
             <section className="confirmation" aria-label="指令确认">

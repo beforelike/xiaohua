@@ -53,6 +53,39 @@ vi.mock('./features/canvas/LayerCanvas', () => ({
   ),
 }))
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubApi(
+  routes: Record<string, () => Response> = {},
+): ReturnType<typeof vi.fn<typeof fetch>> {
+  const fetchMock = vi.fn<typeof fetch>(async (input) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url
+
+    if (url === '/api/asr/health') {
+      return jsonResponse({ provider: 'mock', available: false })
+    }
+
+    const route = routes[url]
+    if (!route) {
+      throw new Error(`Unexpected fetch request: ${url}`)
+    }
+
+    return route()
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
 describe('App', () => {
   beforeEach(() => {
     useProjectStore.getState().replaceProject(
@@ -61,6 +94,7 @@ describe('App', () => {
         now: () => '2026-06-12T12:00:00.000Z',
       }),
     )
+    stubApi()
   })
 
   afterEach(() => {
@@ -121,9 +155,9 @@ describe('App', () => {
   })
 
   it('parses and executes a text command through the local API', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
           command: {
             schemaVersion: 1,
             id: 'create-command',
@@ -134,10 +168,7 @@ describe('App', () => {
             confidence: 1,
           },
         }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    )
-    vi.stubGlobal('fetch', fetchMock)
+    })
     render(<App />)
 
     fireEvent.change(
@@ -149,10 +180,13 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByText('已添加太阳')).toBeInTheDocument(),
     )
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/commands/parse',
+      expect.anything(),
+    )
   })
 
-  it('uses browser speech recognition as an optional fallback', () => {
+  it('uses browser speech recognition as an optional fallback', async () => {
     const start = vi.fn()
     class Recognition {
       lang = ''
@@ -167,7 +201,7 @@ describe('App', () => {
     window.SpeechRecognition = Recognition
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }))
+    fireEvent.click(await screen.findByRole('button', { name: '开始语音输入' }))
 
     expect(start).toHaveBeenCalledOnce()
     expect(
@@ -177,25 +211,20 @@ describe('App', () => {
   })
 
   it('requires confirmation before executing a low-confidence command', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            command: {
-              schemaVersion: 1,
-              id: 'uncertain-create',
-              action: 'create',
-              objectType: 'preset',
-              properties: { name: '云朵' },
-              requiresGeneration: false,
-              confidence: 0.6,
-            },
-          }),
-          { status: 200 },
-        ),
-      ),
-    )
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'uncertain-create',
+            action: 'create',
+            objectType: 'preset',
+            properties: { name: '云朵' },
+            requiresGeneration: false,
+            confidence: 0.6,
+          },
+        }),
+    })
     render(<App />)
 
     fireEvent.change(
@@ -226,24 +255,19 @@ describe('App', () => {
     }
     add({ ...sun, id: 'sun-left', x: 20, y: 30 })
     add({ ...sun, id: 'sun-right', x: 700, y: 40 })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            command: {
-              schemaVersion: 1,
-              id: 'delete-sun',
-              action: 'delete',
-              target: { name: '太阳' },
-              requiresGeneration: false,
-              confidence: 1,
-            },
-          }),
-          { status: 200 },
-        ),
-      ),
-    )
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'delete-sun',
+            action: 'delete',
+            target: { name: '太阳' },
+            requiresGeneration: false,
+            confidence: 1,
+          },
+        }),
+    })
     render(<App />)
 
     fireEvent.change(
@@ -276,33 +300,24 @@ describe('App', () => {
       rotation: 12,
       createdBy: 'voice',
     })
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            command: {
-              schemaVersion: 1,
-              id: 'regenerate-tree',
-              action: 'modify',
-              target: { id: 'tree' },
-              prompt: '一棵更梦幻的树',
-              requiresGeneration: true,
-              confidence: 0.95,
-            },
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            asset: { url: '/api/assets/new-tree', source: 'generated' },
-          }),
-          { status: 200 },
-        ),
-      )
-    vi.stubGlobal('fetch', fetchMock)
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'regenerate-tree',
+            action: 'modify',
+            target: { id: 'tree' },
+            prompt: '一棵更梦幻的树',
+            requiresGeneration: true,
+            confidence: 0.95,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/new-tree', source: 'generated' },
+        }),
+    })
     render(<App />)
 
     fireEvent.change(

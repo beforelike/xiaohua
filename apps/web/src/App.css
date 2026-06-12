@@ -316,6 +316,21 @@
   font-size: 11px;
 }
 
+.voice-status {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.voice-status.phase-error {
+  color: var(--terracotta);
+}
+
+.voice-status.phase-listening,
+.voice-status.phase-recognizing {
+  color: var(--green);
+}
+
 .confirmation {
   margin-top: 12px;
   padding: 14px;

@@ -10,6 +10,7 @@ import type { AppConfig } from './config'
 import { generateAsset, readAsset } from './services/imageGeneration'
 import { parseLlmCommand } from './services/llmCommandParser'
 import { parseRuleCommand } from './services/ruleCommandParser'
+import { checkAsrHealth, transcribeAudio } from './services/asrProvider'
 
 export function mapError(error: unknown, requestId: string) {
   const invalidRequest =
@@ -50,6 +51,45 @@ export function createApp(config: AppConfig) {
       asrProvider: config.ASR_PROVIDER,
     })
   })
+
+  app.get('/api/asr/health', async (_request, response, next) => {
+    try {
+      response.json(await checkAsrHealth(config))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post(
+    '/api/asr/transcribe',
+    express.raw({
+      type: ['audio/*', 'application/octet-stream'],
+      limit: '25mb',
+    }),
+    async (request, response, next) => {
+      try {
+        if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
+          response.status(400).json({
+            error: {
+              code: 'INVALID_REQUEST',
+              message: '没有收到可识别的音频',
+              retryable: false,
+              requestId: response.locals.requestId as string,
+            },
+          })
+          return
+        }
+        const text = await transcribeAudio(
+          request.body,
+          request.header('content-type') ?? 'audio/webm',
+          config,
+        )
+        response.json({ text })
+      } catch (error) {
+        next(error)
+      }
+    },
+  )
 
   app.post('/api/commands/parse', async (request, response, next) => {
     try {

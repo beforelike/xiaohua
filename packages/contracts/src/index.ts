@@ -174,6 +174,24 @@ export const apiErrorSchema = z.object({
   }),
 })
 
+export const appPhaseSchema = z.enum([
+  'idle',
+  'listening',
+  'recognizing',
+  'parsing',
+  'confirming',
+  'generating',
+  'success',
+  'error',
+])
+
+export const appStatusSchema = z.object({
+  phase: appPhaseSchema,
+  message: z.string().min(1),
+  commandId: z.string().min(1).optional(),
+  recoverable: z.boolean(),
+})
+
 export type CanvasSettings = z.infer<typeof canvasSettingsSchema>
 export type Layer = z.infer<typeof layerSchema>
 export type Project = z.infer<typeof projectSchema>
@@ -182,3 +200,5 @@ export type ParseCommandRequest = z.infer<typeof parseCommandRequestSchema>
 export type GenerateAssetRequest = z.infer<typeof generateAssetRequestSchema>
 export type GeneratedAsset = z.infer<typeof generatedAssetSchema>
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>
+export type AppPhase = z.infer<typeof appPhaseSchema>
+export type AppStatus = z.infer<typeof appStatusSchema>
