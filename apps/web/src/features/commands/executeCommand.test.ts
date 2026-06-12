@@ -116,6 +116,43 @@ describe('executeCommand', () => {
     expect((sun?.x ?? 0) + (sun?.width ?? 0)).toBeLessThanOrEqual(1024)
   })
 
+  it('moves a generated object by its custom name', () => {
+    let project = createProject('测试', factory)
+    const horse = createLayer(
+      project,
+      {
+        id: 'horse',
+        name: '奔跑的马',
+        type: 'image',
+        source: 'generated',
+        width: 320,
+        height: 320,
+        createdBy: 'voice',
+      },
+      { now: () => now },
+    )
+    project = addLayer(project, horse, now)
+
+    const result = executeCommand(
+      project,
+      command({
+        action: 'modify',
+        target: { name: '奔跑的马' },
+        properties: { position: 'left' },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.project.layers[0]).toMatchObject({
+      id: 'horse',
+      x: 48,
+      y: 224,
+    })
+  })
+
   it('deletes the selected layer and chooses a stable fallback', () => {
     const result = executeCommand(
       projectWithLayers(),

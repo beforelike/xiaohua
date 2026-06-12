@@ -35,8 +35,10 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
    - 根据用户题材自动判断统一英文 style；用户明确指定风格时优先遵从
    - 未指定风格时，自然动物和真实场景默认使用 photorealistic photography
    - 当前项目已有画风时默认延续，除非用户明确要求更换
-   - 正向提示词包含：风格、外观细节、颜色、质感、光照等
-   - 前景对象必须包含："isolated object, solid white background, no background clutter, single subject"
+   - style 单独保存统一画风；对象 prompt 只描述内容、构图、外观、颜色、材质和局部光照
+   - 用户原文中的动作、姿态、朝向、数量和对象关系必须逐项保留，不得改成静态姿势或其他动作
+   - 不要在对象 prompt 中重复 style、masterpiece、best quality 等全局词，生图阶段会统一组合
+   - 前景对象必须完整入镜并四周留白，包含："entire object fully visible, full body in frame, generous empty margin, isolated object, solid white background, no background clutter, single subject"
    - 负向提示词：根据对象类型生成合适的负向词
 
 3. 对于非 create 命令（select/modify/delete/reorder/rename/save等），正常解析即可，不需要 objects 字段。
@@ -58,7 +60,7 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
   "objects": [
     {
       "name": "草原",
-      "prompt": "vast green grassland, flat terrain, lush green grass field, natural meadow landscape, blue sky, soft sunlight, panoramic view, photorealistic, high quality, detailed texture",
+      "prompt": "vast green grassland, flat terrain, lush grass, blue sky, soft sunlight, panoramic composition, detailed natural textures",
       "negativePrompt": "buildings, people, animals, text, watermark, low quality, blurry",
       "background": "opaque",
       "isBackground": true,
@@ -67,7 +69,7 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
     },
     {
       "name": "马",
-      "prompt": "a majestic horse galloping, light golden fur, muscular body, flowing mane and tail, dynamic running pose, powerful legs in motion, realistic style, isolated object, solid white background, no background clutter, single subject, high quality, detailed",
+      "prompt": "a majestic horse galloping, light golden fur, muscular body, flowing mane and tail, dynamic running pose, powerful legs in motion, isolated object, solid white background, no background clutter, single subject",
       "negativePrompt": "complex background, multiple subjects, busy background, lowres, bad anatomy, deformed, blurry, watermark, text",
       "background": "transparent",
       "isBackground": false,

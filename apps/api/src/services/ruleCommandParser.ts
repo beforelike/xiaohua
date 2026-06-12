@@ -5,10 +5,35 @@ import {
   type ParseCommandRequest,
 } from '@xiaohua/contracts'
 
-const objectNames = ['太阳', '树', '草地', '云朵', '云', '月亮', '花', '房子']
+const presetObjectNames = [
+  '太阳',
+  '树',
+  '草地',
+  '云朵',
+  '云',
+  '月亮',
+  '花',
+  '房子',
+]
 
-function targetFromText(text: string): DrawingCommand['target'] {
-  const name = objectNames.find((candidate) => text.includes(candidate))
+function objectNameFromText(
+  text: string,
+  context: ParseCommandRequest['context'],
+) {
+  const names = [
+    ...context.recentLayers.map((layer) => layer.name),
+    ...presetObjectNames,
+  ]
+    .filter((name, index, all) => all.indexOf(name) === index)
+    .sort((left, right) => right.length - left.length)
+  return names.find((candidate) => text.includes(candidate))
+}
+
+function targetFromText(
+  text: string,
+  context: ParseCommandRequest['context'],
+): DrawingCommand['target'] {
+  const name = objectNameFromText(text, context)
   if (text.includes('刚才') || text.includes('上一个')) {
     return { reference: 'recent', ...(name ? { name } : {}) }
   }
@@ -19,19 +44,28 @@ function targetFromText(text: string): DrawingCommand['target'] {
 }
 
 function positionFromText(text: string): string | undefined {
-  const positions: Array<[string, string]> = [
-    ['右上', 'top-right'],
-    ['左上', 'top-left'],
-    ['右下', 'bottom-right'],
-    ['左下', 'bottom-left'],
-    ['中间', 'center'],
-    ['中央', 'center'],
-    ['左边', 'left'],
-    ['右边', 'right'],
-    ['上面', 'top'],
-    ['下面', 'bottom'],
+  const positions: Array<[RegExp, string]> = [
+    [/(右上|右上方|右上角)/, 'top-right'],
+    [/(左上|左上方|左上角)/, 'top-left'],
+    [/(右下|右下方|右下角)/, 'bottom-right'],
+    [/(左下|左下方|左下角)/, 'bottom-left'],
+    [/(中间|中央|正中|居中)/, 'center'],
+    [/(左边|左侧|向左|往左|左移)/, 'left'],
+    [/(右边|右侧|向右|往右|右移)/, 'right'],
+    [/(上面|上方|向上|往上|上移)/, 'top'],
+    [/(下面|下方|向下|往下|下移)/, 'bottom'],
   ]
-  return positions.find(([keyword]) => text.includes(keyword))?.[1]
+  return positions.find(([pattern]) => pattern.test(text))?.[1]
+}
+
+function looksLikeDrawingDescription(text: string) {
+  return /(?:一只|一匹|一棵|一朵|一个|一位|一幅|场景|画面|背景|插画|照片|卡通|写实|水彩|油画|水墨|奔跑|飞翔|站立|坐着|躺着|跳跃|微笑|挥手|草原|森林|海边|天空|人物|动物)/.test(
+    text,
+  )
+}
+
+function looksLikeEditInstruction(text: string) {
+  return /(?:把|将|让|调整|安排|移动|挪动|挪到|放到|改成|变成|重新)/.test(text)
 }
 
 export function parseRuleCommand(
@@ -50,7 +84,7 @@ export function parseRuleCommand(
     return drawingCommandSchema.parse({ ...base, action: 'save' })
   }
 
-  const target = targetFromText(text)
+  const target = targetFromText(text, request.context)
   if (/(删除|删掉|移除)/.test(text)) {
     return drawingCommandSchema.parse({ ...base, action: 'delete', target })
   }
@@ -98,8 +132,8 @@ export function parseRuleCommand(
     })
   }
 
-  if (/(画|添加|加上|加一个|创建)/.test(text)) {
-    const name = objectNames.find((candidate) => text.includes(candidate))
+  if (/(?:画(?!面)|添加|加上|加一个|创建)/.test(text)) {
+    const name = presetObjectNames.find((candidate) => text.includes(candidate))
     return drawingCommandSchema.parse({
       ...base,
       action: 'create',
@@ -123,12 +157,7 @@ export function parseRuleCommand(
   const rotation = rotationText?.[1]
     ? Number.parseFloat(rotationText[1])
     : undefined
-  if (
-    position ||
-    size ||
-    rotation !== undefined ||
-    /(移动|放到|变大|变小|缩小|放大)/.test(text)
-  ) {
+  if (position || size || rotation !== undefined) {
     return drawingCommandSchema.parse({
       ...base,
       action: 'modify',
@@ -138,6 +167,20 @@ export function parseRuleCommand(
         ...(size ? { size } : {}),
         ...(rotation !== undefined ? { rotation } : {}),
       },
+    })
+  }
+
+  if (
+    looksLikeDrawingDescription(text) &&
+    !(target && looksLikeEditInstruction(text))
+  ) {
+    return drawingCommandSchema.parse({
+      ...base,
+      action: 'create',
+      objectType: 'image',
+      prompt: request.text,
+      requiresGeneration: true,
+      confidence: 0.82,
     })
   }
 

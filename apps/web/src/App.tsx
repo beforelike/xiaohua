@@ -91,6 +91,7 @@ function App() {
   const project = useProjectStore((state) => state.project)
   const addReadyLayer = useProjectStore((state) => state.addReadyLayer)
   const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
+  const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
   const execute = useProjectStore((state) => state.execute)
   const [text, setText] = useState('')
   const [status, setStatus] = useState(
@@ -119,9 +120,93 @@ function App() {
         const generated: Array<{
           object: SceneObject
           asset: { url: string; source: 'generated' | 'preset' }
+          characterAssetId?: string
         }> = []
         for (const obj of command.objects as SceneObject[]) {
           try {
+            let characterAsset = obj.isBackground
+              ? undefined
+              : useProjectStore
+                  .getState()
+                  .project.characterAssets.find(
+                    (candidate) =>
+                      candidate.name === obj.name &&
+                      candidate.style === (command.style ?? ''),
+                  )
+            if (!obj.isBackground && !characterAsset) {
+              const identityPrompt = obj.identityPrompt ?? obj.prompt
+              setStatus(`正在建立“${obj.name}”的身份锚点…`)
+              const anchorResponse = await fetch('/api/assets/generate', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  schemaVersion: 1,
+                  commandId: `${command.id}-${obj.name}-identity-anchor`,
+                  prompt: `${identityPrompt}, canonical full-body identity reference, neutral natural standing pose, three-quarter view, complete body visible`,
+                  negativePrompt:
+                    'action scene, dynamic pose, environment, landscape, text, labels, watermark, cropped body, missing limbs, inconsistent design',
+                  style: command.style,
+                  width: 768,
+                  height: 768,
+                  background: 'opaque',
+                  enhancedPrompt: true,
+                  generationMode: 'standard',
+                }),
+              })
+              if (!anchorResponse.ok) {
+                setStatus(`建立“${obj.name}”身份锚点失败，作品未修改。`)
+                return
+              }
+              const anchorPayload = (await anchorResponse.json()) as {
+                asset: {
+                  id: string
+                  url: string
+                  source: 'generated' | 'preset'
+                }
+              }
+              setStatus(`正在建立“${obj.name}”的三视图辅助图…`)
+              const turnaroundResponse = await fetch('/api/assets/generate', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  schemaVersion: 1,
+                  commandId: `${command.id}-${obj.name}-turnaround`,
+                  prompt: `${identityPrompt}, front view, left side view and rear view reference plate, complete body visible in every view, neutral natural standing pose`,
+                  negativePrompt:
+                    'action scene, dynamic pose, environment, landscape, text, labels, watermark, cropped body, missing limbs, inconsistent views',
+                  style: command.style,
+                  width: 768,
+                  height: 768,
+                  background: 'opaque',
+                  enhancedPrompt: true,
+                  generationMode: 'character-action',
+                  referenceAssetId: anchorPayload.asset.id,
+                  referenceWeight: 0.55,
+                }),
+              })
+              if (!turnaroundResponse.ok) {
+                setStatus(`建立“${obj.name}”三视图失败，作品未修改。`)
+                return
+              }
+              const turnaroundPayload = (await turnaroundResponse.json()) as {
+                asset: {
+                  id: string
+                  url: string
+                  source: 'generated' | 'preset'
+                }
+              }
+              characterAsset = addCharacterAsset({
+                id: crypto.randomUUID(),
+                name: obj.name,
+                identityPrompt,
+                turnaroundAssetId: turnaroundPayload.asset.id,
+                turnaroundAssetUrl: turnaroundPayload.asset.url,
+                referenceAssetId: anchorPayload.asset.id,
+                referenceAssetUrl: anchorPayload.asset.url,
+                style: command.style ?? '',
+              })
+            }
+            setStatus(`正在生成“${obj.name}”动作素材…`)
             const response = await fetch('/api/assets/generate', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -135,6 +220,11 @@ function App() {
                 height: 512,
                 background: obj.background,
                 enhancedPrompt: true,
+                generationMode: characterAsset
+                  ? 'character-action'
+                  : 'standard',
+                referenceAssetId: characterAsset?.referenceAssetId,
+                referenceWeight: 0.55,
               }),
             })
             if (!response.ok) {
@@ -144,24 +234,33 @@ function App() {
             const payload = (await response.json()) as {
               asset: { url: string; source: 'generated' | 'preset' }
             }
-            generated.push({ object: obj, asset: payload.asset })
+            generated.push({
+              object: obj,
+              asset: payload.asset,
+              ...(characterAsset
+                ? { characterAssetId: characterAsset.id }
+                : {}),
+            })
           } catch {
             setStatus(`生成“${obj.name}”时出错，作品未修改。`)
             return
           }
         }
-        const results = generated.map(({ object, asset }) => {
-          const layout = sceneObjectLayout(object, project)
-          return addReadyLayer({
-            name: object.name,
-            type: 'image',
-            source: asset.source,
-            assetUrl: asset.url,
-            prompt: object.prompt,
-            ...layout,
-            createdBy: 'voice',
-          })
-        })
+        const results = generated.map(
+          ({ object, asset, characterAssetId }) => {
+            const layout = sceneObjectLayout(object, project)
+            return addReadyLayer({
+              name: object.name,
+              type: 'image',
+              source: asset.source,
+              assetUrl: asset.url,
+              prompt: object.prompt,
+              ...(characterAssetId ? { characterAssetId } : {}),
+              ...layout,
+              createdBy: 'voice',
+            })
+          },
+        )
         if (command.style && command.style !== project.globalStyle) {
           useProjectStore.getState().replaceProject({
             ...useProjectStore.getState().project,
@@ -236,6 +335,11 @@ function App() {
         return
       }
       const target = resolution.layer
+      const characterAsset = target.characterAssetId
+        ? project.characterAssets.find(
+            (asset) => asset.id === target.characterAssetId,
+          )
+        : undefined
       setStatus(`正在重新生成${target.name}，旧素材会保留到成功为止…`)
       const response = await fetch('/api/assets/generate', {
         method: 'POST',
@@ -248,6 +352,9 @@ function App() {
           width: 512,
           height: 512,
           background: 'transparent',
+          generationMode: characterAsset ? 'character-action' : 'standard',
+          referenceAssetId: characterAsset?.referenceAssetId,
+          referenceWeight: 0.55,
         }),
       })
       if (!response.ok) {

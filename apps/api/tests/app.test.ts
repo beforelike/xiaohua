@@ -45,6 +45,8 @@ describe('API application', () => {
       commandProvider: 'mock',
       imageProvider: 'mock',
       asrProvider: 'mock',
+      llmConfigured: false,
+      llmEnhancePrompt: true,
     })
     expect(response.body).not.toHaveProperty('apiKey')
   })
@@ -214,5 +216,68 @@ describe('API application', () => {
       }),
     ])
     expect(body.command.style).toContain('storybook')
+  })
+
+  it('falls back to a configured LLM when rules do not understand the command', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  schemaVersion: 1,
+                  id: 'llm-command',
+                  action: 'modify',
+                  target: { name: '奔跑的马' },
+                  properties: { position: 'top-right' },
+                  requiresGeneration: false,
+                  confidence: 0.96,
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetcher)
+    const rulesWithLlmConfig = getConfig({
+      HOST: '127.0.0.1',
+      PORT: '8787',
+      WEB_ORIGIN: 'http://127.0.0.1:5173',
+      COMMAND_PROVIDER: 'rules',
+      LLM_BASE_URL: 'http://127.0.0.1:11434/v1',
+      LLM_MODEL: 'local-model',
+      LLM_API_KEY: 'test',
+      LLM_ENHANCE_PROMPT: 'false',
+      IMAGE_PROVIDER: 'mock',
+      ASR_PROVIDER: 'mock',
+    })
+
+    const response = await request(createApp(rulesWithLlmConfig))
+      .post('/api/commands/parse')
+      .send({
+        schemaVersion: 1,
+        text: '请重新安排一下奔跑的马，放到画面东北区域',
+        context: {
+          selectedLayerId: null,
+          recentLayers: [
+            { id: 'horse', name: '奔跑的马', type: 'image' },
+          ],
+          globalStyle: '',
+        },
+      })
+
+    expect(response.status).toBe(200)
+    expect(fetcher).toHaveBeenCalledOnce()
+    const body = z
+      .object({ command: drawingCommandSchema })
+      .parse(response.body)
+    expect(body.command).toMatchObject({
+      action: 'modify',
+      target: { name: '奔跑的马' },
+      properties: { position: 'top-right' },
+    })
   })
 })

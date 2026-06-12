@@ -4,11 +4,19 @@ import path from 'node:path'
 import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
+import {
+  composeNegativePrompt,
+  composePositivePrompt,
+} from './promptComposer'
 import { findPreset } from './promptPresets'
 
 interface StableDiffusionResponse {
   images?: string[]
 }
+
+const PROMPT_PIPELINE_VERSION = 6
+const ANIMAL_CHARACTER_PATTERN =
+  /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
 
 export class ImageGenerationError extends Error {
   constructor(
@@ -20,10 +28,13 @@ export class ImageGenerationError extends Error {
 }
 
 function assetId(request: GenerateAssetRequest, config: AppConfig) {
+  const generationMode = request.generationMode ?? 'standard'
+  const referenceWeight = request.referenceWeight ?? 0.7
   return createHash('sha256')
     .update(
       JSON.stringify({
         provider: config.IMAGE_PROVIDER,
+        promptPipelineVersion: PROMPT_PIPELINE_VERSION,
         commandId: request.commandId,
         prompt: request.prompt,
         negativePrompt: request.negativePrompt ?? '',
@@ -32,6 +43,9 @@ function assetId(request: GenerateAssetRequest, config: AppConfig) {
         height: request.height,
         background: request.background,
         enhancedPrompt: request.enhancedPrompt ?? false,
+        generationMode,
+        referenceAssetId: request.referenceAssetId ?? '',
+        referenceWeight,
         steps: config.SD_STEPS,
         cfgScale: config.SD_CFG_SCALE,
         sampler: config.SD_SAMPLER,
@@ -54,104 +68,27 @@ export function buildPrompt(
   style?: string,
   isEnhanced = false,
 ): string {
-  // 如果prompt已经是LLM增强过的，直接使用，只追加画风
-  if (isEnhanced) {
-    const stylePart = style ? `${style}, ` : ''
-    const isolation =
-      background === 'transparent'
-        ? ', isolated object, single subject, centered composition, solid white background, no scenery, no background clutter'
-        : ''
-    return `${stylePart}${userPrompt}${isolation}`
-  }
-
-  // 旧的预设增强逻辑作为回退
-  const preset = findPreset(userPrompt)
-  const qualityTags =
-    'masterpiece, best quality, highly detailed, sharp focus, professional'
-  const stylePart = style ? `${style}, ` : ''
-  const backgroundTag =
-    background === 'transparent'
-      ? ', isolated object, solid white background, no background clutter'
-      : ''
-  const corePrompt = preset ? preset.prompt : userPrompt
-  return `${stylePart}${qualityTags}, ${corePrompt}${backgroundTag}`
+  const preset = isEnhanced ? null : findPreset(userPrompt)
+  return composePositivePrompt({
+    prompt: preset?.prompt ?? userPrompt,
+    style,
+    background,
+    enhanced: isEnhanced,
+  })
 }
 
 export function buildNegativePrompt(
   userPrompt: string,
   customNegative?: string,
+  background: 'transparent' | 'opaque' = 'opaque',
 ): string {
-  // 如果提供了自定义负向提示词（来自LLM增强），直接使用
-  if (customNegative) {
-    const base = [
-      'lowres',
-      'bad anatomy',
-      'bad hands',
-      'text',
-      'error',
-      'missing fingers',
-      'extra digit',
-      'fewer digits',
-      'cropped',
-      'worst quality',
-      'low quality',
-      'normal quality',
-      'jpeg artifacts',
-      'signature',
-      'watermark',
-      'username',
-      'blurry',
-      'deformed',
-      'ugly',
-      'duplicate',
-      'morbid',
-      'mutilated',
-      'out of frame',
-      'extra limbs',
-      'mutation',
-      'poorly drawn',
-      'disfigured',
-      'bad proportions',
-    ].join(', ')
-    return `${base}, ${customNegative}`
-  }
-
-  // 旧的预设回退逻辑
   const preset = findPreset(userPrompt)
-  const base = [
-    'lowres',
-    'bad anatomy',
-    'bad hands',
-    'text',
-    'error',
-    'missing fingers',
-    'extra digit',
-    'fewer digits',
-    'cropped',
-    'worst quality',
-    'low quality',
-    'normal quality',
-    'jpeg artifacts',
-    'signature',
-    'watermark',
-    'username',
-    'blurry',
-    'deformed',
-    'ugly',
-    'duplicate',
-    'morbid',
-    'mutilated',
-    'out of frame',
-    'extra limbs',
-    'mutation',
-    'poorly drawn',
-    'disfigured',
-    'bad proportions',
-  ].join(', ')
-  if (preset?.negativeExtra) {
-    return `${base}, ${preset.negativeExtra}`
-  }
-  return base
+  return composeNegativePrompt({
+    prompt: userPrompt,
+    customNegative,
+    presetNegative: preset?.negativeExtra,
+    background,
+  })
 }
 
 export function resolveAssetPath(cacheDirectory: string, id: string) {
@@ -183,19 +120,68 @@ export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
     Math.round(corners.reduce((sum, color) => sum + color[2], 0) / 4),
   ]
 
-  for (let offset = 0; offset < data.length; offset += info.channels) {
+  const pixelCount = info.width * info.height
+  const visited = new Uint8Array(pixelCount)
+  const queue = new Int32Array(pixelCount)
+  let head = 0
+  let tail = 0
+  const colorDistance = (index: number) => {
+    const offset = index * info.channels
     const red = data[offset] ?? 255
     const green = data[offset + 1] ?? 255
     const blue = data[offset + 2] ?? 255
-    const distance = Math.sqrt(
+    return Math.sqrt(
       (red - background[0]) ** 2 +
         (green - background[1]) ** 2 +
         (blue - background[2]) ** 2,
     )
-    if (distance < 24) data[offset + 3] = 0
-    else if (distance < 64) {
-      data[offset + 3] = Math.round(((distance - 24) / 40) * 255)
-    }
+  }
+  const isBackgroundLike = (index: number) => {
+    const offset = index * info.channels
+    const red = data[offset] ?? 255
+    const green = data[offset + 1] ?? 255
+    const blue = data[offset + 2] ?? 255
+    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue)
+    return colorDistance(index) < 112 || chroma < 28
+  }
+  const neighboringDistance = (left: number, right: number) => {
+    const leftOffset = left * info.channels
+    const rightOffset = right * info.channels
+    return Math.sqrt(
+      ((data[leftOffset] ?? 255) - (data[rightOffset] ?? 255)) ** 2 +
+        ((data[leftOffset + 1] ?? 255) - (data[rightOffset + 1] ?? 255)) ** 2 +
+        ((data[leftOffset + 2] ?? 255) - (data[rightOffset + 2] ?? 255)) ** 2,
+    )
+  }
+  const enqueue = (index: number, from?: number) => {
+    if (visited[index] || !isBackgroundLike(index)) return
+    if (from !== undefined && neighboringDistance(index, from) > 48) return
+    visited[index] = 1
+    queue[tail] = index
+    tail += 1
+  }
+
+  for (let x = 0; x < info.width; x += 1) {
+    enqueue(x)
+    enqueue((info.height - 1) * info.width + x)
+  }
+  for (let y = 1; y < info.height - 1; y += 1) {
+    enqueue(y * info.width)
+    enqueue(y * info.width + info.width - 1)
+  }
+
+  while (head < tail) {
+    const index = queue[head]
+    if (index === undefined) break
+    head += 1
+    const x = index % info.width
+    const y = Math.floor(index / info.width)
+    const offset = index * info.channels
+    data[offset + 3] = 0
+    if (x > 0) enqueue(index - 1, index)
+    if (x + 1 < info.width) enqueue(index + 1, index)
+    if (y > 0) enqueue(index - info.width, index)
+    if (y + 1 < info.height) enqueue(index + info.width, index)
   }
 
   return sharp(data, {
@@ -209,11 +195,38 @@ export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
     .toBuffer()
 }
 
+export async function validateTransparentCutout(input: Buffer) {
+  const { data, info } = await sharp(input)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  let opaquePixels = 0
+  let opaqueBorderPixels = 0
+  let borderPixels = 0
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const alpha = data[(y * info.width + x) * info.channels + 3] ?? 255
+      if (alpha > 220) opaquePixels += 1
+      if (x === 0 || y === 0 || x === info.width - 1 || y === info.height - 1) {
+        borderPixels += 1
+        if (alpha > 220) opaqueBorderPixels += 1
+      }
+    }
+  }
+  const opaqueRatio = opaquePixels / (info.width * info.height)
+  const opaqueBorderRatio = opaqueBorderPixels / borderPixels
+  if (opaqueRatio > 0.78 || opaqueBorderRatio > 0.15) {
+    throw new Error('FOREGROUND_BACKGROUND_NOT_REMOVED')
+  }
+}
+
 export async function generateAsset(
   request: GenerateAssetRequest,
   config: AppConfig,
   fetcher: typeof fetch = fetch,
 ): Promise<GeneratedAsset> {
+  const generationMode = request.generationMode ?? 'standard'
+  const referenceWeight = request.referenceWeight ?? 0.7
   const id = assetId(request, config)
   const cacheDirectory = path.resolve(config.ASSET_CACHE_DIR)
   const pngPath = path.join(cacheDirectory, `${id}.png`)
@@ -236,19 +249,81 @@ export async function generateAsset(
   }
 
   if (config.IMAGE_PROVIDER === 'stable-diffusion-webui') {
+    let lastError: Error | null = null
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const isEnhanced = request.enhancedPrompt ?? false
+        const isAnimalCharacter = ANIMAL_CHARACTER_PATTERN.test(request.prompt)
+        const animalIdentityConstraint = isAnimalCharacter
+          ? ', (real ordinary quadruped animal:1.5), biologically correct species anatomy, natural animal body and limbs'
+          : ''
+        const characterSheetPrompt =
+          generationMode === 'character-sheet'
+            ? isAnimalCharacter
+              ? `${request.prompt}${animalIdentityConstraint}, veterinary animal conformation reference plate, the same animal or fixed animal group shown from front, left side, right side and rear, neutral natural standing pose on four legs, complete body from ears to hooves visible in every view, consistent coat markings and proportions, plain white studio background`
+              : `${request.prompt}, professional production character turnaround reference sheet, the same character or fixed character group shown in front view, left side view, right side view, back view, head close-up and distinctive markings detail, neutral standing pose, complete body visible in every view, consistent proportions and colors across every panel, orthographic views, plain white studio background, no action scene`
+            : generationMode === 'character-action'
+              ? isAnimalCharacter
+                ? `${request.prompt}${animalIdentityConstraint}, wildlife animal photograph, preserve species, coat colors, markings and proportions from the reference image, follow the requested animal action and four-legged pose exactly; the text prompt controls composition and body pose`
+                : `${request.prompt}, preserve identity, colors, markings and proportions from the reference image, but follow the requested action and pose exactly; the text prompt controls composition and body pose`
+              : request.prompt
         const enhancedPrompt = buildPrompt(
-          request.prompt,
+          characterSheetPrompt,
           request.background,
           request.style ?? config.SD_STYLE_PROMPT,
           isEnhanced,
         )
+        const modeNegative = [
+          request.negativePrompt,
+          generationMode === 'character-sheet'
+            ? 'cropped turnaround, inconsistent views, different character in each view'
+            : '',
+          isAnimalCharacter
+            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts'
+            : '',
+        ]
+          .filter(Boolean)
+          .join(', ')
         const negativePrompt = buildNegativePrompt(
           request.prompt,
-          request.negativePrompt,
+          modeNegative,
+          request.background,
         )
+        let alwaysonScripts:
+          | {
+              controlnet: {
+                args: Array<Record<string, unknown>>
+              }
+            }
+          | undefined
+        if (
+          generationMode === 'character-action' && request.referenceAssetId
+        ) {
+          const referencePath = resolveAssetPath(
+            cacheDirectory,
+            request.referenceAssetId,
+          )
+          if (!referencePath) throw new Error('INVALID_REFERENCE_ASSET')
+          const reference = await readFile(`${referencePath}.png`)
+          alwaysonScripts = {
+            controlnet: {
+              args: [
+                {
+                  enabled: true,
+                  image: reference.toString('base64'),
+                  module: 'reference_only',
+                  model: 'None',
+                  weight: referenceWeight,
+                  resize_mode: 'Crop and Resize',
+                  control_mode: 'My prompt is more important',
+                  guidance_start: 0,
+                  guidance_end: 1,
+                  pixel_perfect: true,
+                },
+              ],
+            },
+          }
+        }
         const response = await fetcher(
           `${config.SD_WEBUI_BASE_URL.replace(/\/$/, '')}/sdapi/v1/txt2img`,
           {
@@ -265,6 +340,9 @@ export async function generateAsset(
               batch_size: 1,
               restore_faces: false,
               tiling: false,
+              ...(alwaysonScripts
+                ? { alwayson_scripts: alwaysonScripts }
+                : {}),
             }),
             signal: AbortSignal.timeout(90_000),
           },
@@ -281,6 +359,9 @@ export async function generateAsset(
           request.background === 'transparent'
             ? await removeSolidBackground(generated)
             : generated
+        if (request.background === 'transparent') {
+          await validateTransparentCutout(output)
+        }
         await writeFile(pngPath, output)
         return {
           id,
@@ -292,13 +373,17 @@ export async function generateAsset(
           source: 'generated',
         }
       } catch (error) {
-        if (attempt === 1 && error instanceof Error) {
-          break
-        }
+        lastError =
+          error instanceof Error ? error : new Error('UNKNOWN_GENERATION_ERROR')
       }
     }
+    throw new ImageGenerationError(
+      `Stable Diffusion WebUI 生成失败：${lastError?.message ?? '未知错误'}`,
+      true,
+    )
   }
 
+  // Mock mode intentionally returns a visible placeholder for tests and demos.
   await writeFile(svgPath, fallbackSvg(request), 'utf8')
   return {
     id,

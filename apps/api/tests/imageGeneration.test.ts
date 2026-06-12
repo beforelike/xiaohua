@@ -9,6 +9,7 @@ import {
   readAsset,
   removeSolidBackground,
   resolveAssetPath,
+  validateTransparentCutout,
 } from '../src/services/imageGeneration'
 
 const directories: string[] = []
@@ -98,10 +99,12 @@ describe('imageGeneration', () => {
     })
       .png()
       .toBuffer()
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
-        status: 200,
-      }),
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+          status: 200,
+        }),
+      ),
     )
 
     await generateAsset(request, config, fetcher)
@@ -167,10 +170,12 @@ describe('imageGeneration', () => {
     })
       .png()
       .toBuffer()
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
-        status: 200,
-      }),
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+          status: 200,
+        }),
+      ),
     )
 
     const generatedAsset = await generateAsset(
@@ -184,20 +189,92 @@ describe('imageGeneration', () => {
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
-  it('falls back to a local SVG after two provider failures', async () => {
+  it('uses the saved character sheet as a Reference Only control image', async () => {
+    const config = await createConfig()
+    const png = await sharp({
+      create: {
+        width: 16,
+        height: 16,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+          status: 200,
+        }),
+      ),
+    )
+    const reference = await generateAsset(
+      {
+        ...request,
+        commandId: 'horse-character-sheet',
+        prompt: 'a chestnut horse with a white blaze',
+        background: 'opaque',
+        generationMode: 'character-sheet',
+      },
+      config,
+      fetcher,
+    )
+
+    await generateAsset(
+      {
+        ...request,
+        commandId: 'horse-drinking',
+        prompt: 'the horse lowers its head to drink',
+        background: 'opaque',
+        generationMode: 'character-action',
+        referenceAssetId: reference.id,
+        referenceWeight: 0.9,
+      },
+      config,
+      fetcher,
+    )
+
+    const requestBody = fetcher.mock.calls[1]?.[1]?.body
+    expect(typeof requestBody).toBe('string')
+    const body = JSON.parse(requestBody as string) as {
+      alwayson_scripts: {
+        controlnet: {
+          args: Array<{
+            module: string
+            model: string
+            weight: number
+            image: string
+            control_mode: string
+          }>
+        }
+      }
+    }
+    const control = body.alwayson_scripts.controlnet.args[0]
+    expect(control?.module).toBe('reference_only')
+    expect(control?.model).toBe('None')
+    expect(control?.weight).toBe(0.9)
+    expect(control?.image.length).toBeGreaterThan(0)
+    expect(control?.control_mode).toBe('My prompt is more important')
+  })
+
+  it('reports WebUI failure instead of returning a fake placeholder', async () => {
     const config = await createConfig()
     const fetcher = vi
       .fn<typeof fetch>()
       .mockRejectedValue(new Error('offline'))
 
-    const asset = await generateAsset(request, config, fetcher)
+    await expect(generateAsset(request, config, fetcher)).rejects.toThrow(
+      'Stable Diffusion WebUI 生成失败：offline',
+    )
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses a local SVG placeholder only in explicit mock mode', async () => {
+    const config = await createConfig('mock')
+    const asset = await generateAsset(request, config)
     const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
 
-    expect(fetcher).toHaveBeenCalledTimes(2)
-    expect(asset).toMatchObject({
-      source: 'preset',
-      mimeType: 'image/svg+xml',
-    })
+    expect(asset).toMatchObject({ source: 'preset', mimeType: 'image/svg+xml' })
     expect(stored?.body.toString()).toContain('<svg')
   })
 
@@ -247,5 +324,100 @@ describe('imageGeneration', () => {
 
     expect(alphaAt(0, 0)).toBe(0)
     expect(alphaAt(3, 3)).toBe(255)
+  })
+
+  it('only removes background-colored pixels connected to an image edge', async () => {
+    const input = await sharp({
+      create: {
+        width: 7,
+        height: 7,
+        channels: 3,
+        background: '#f5f5f5',
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: 5,
+              height: 5,
+              channels: 3,
+              background: '#303030',
+            },
+          })
+            .composite([
+              {
+                input: await sharp({
+                  create: {
+                    width: 1,
+                    height: 1,
+                    channels: 3,
+                    background: '#f5f5f5',
+                  },
+                })
+                  .png()
+                  .toBuffer(),
+                left: 2,
+                top: 2,
+              },
+            ])
+            .png()
+            .toBuffer(),
+          left: 1,
+          top: 1,
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    const output = await removeSolidBackground(input)
+    const { data, info } = await sharp(output)
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const alphaAt = (x: number, y: number) =>
+      data[(y * info.width + x) * info.channels + 3]
+
+    expect(alphaAt(0, 0)).toBe(0)
+    expect(alphaAt(3, 3)).toBe(255)
+  })
+
+  it('removes an edge-connected grayscale gradient background', async () => {
+    const gradient = Buffer.from(
+      `<svg width="16" height="16" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#222"/>
+          <stop offset="1" stop-color="#fff"/>
+        </linearGradient></defs>
+        <rect width="16" height="16" fill="url(#g)"/>
+        <rect x="5" y="4" width="6" height="8" fill="#9b3f24"/>
+      </svg>`,
+    )
+    const output = await removeSolidBackground(await sharp(gradient).png().toBuffer())
+    const { data, info } = await sharp(output)
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const alphaAt = (x: number, y: number) =>
+      data[(y * info.width + x) * info.channels + 3]
+
+    expect(alphaAt(0, 0)).toBe(0)
+    expect(alphaAt(15, 15)).toBe(0)
+    expect(alphaAt(8, 8)).toBe(255)
+  })
+
+  it('rejects a foreground image that remains opaque across the frame', async () => {
+    const opaque = await sharp({
+      create: {
+        width: 16,
+        height: 16,
+        channels: 4,
+        background: '#405060ff',
+      },
+    })
+      .png()
+      .toBuffer()
+
+    await expect(validateTransparentCutout(opaque)).rejects.toThrow(
+      'FOREGROUND_BACKGROUND_NOT_REMOVED',
+    )
   })
 })

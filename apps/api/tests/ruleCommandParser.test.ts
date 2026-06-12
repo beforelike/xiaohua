@@ -4,7 +4,10 @@ import { parseRuleCommand } from '../src/services/ruleCommandParser'
 
 const context: ParseCommandRequest['context'] = {
   selectedLayerId: 'tree',
-  recentLayers: [{ id: 'sun', name: '太阳', type: 'preset' }],
+  recentLayers: [
+    { id: 'horse', name: '奔跑的马', type: 'image' },
+    { id: 'sun', name: '太阳', type: 'preset' },
+  ],
   globalStyle: '童话手绘',
 }
 
@@ -41,11 +44,40 @@ describe('parseRuleCommand', () => {
     expect(parse('今天天气不错')).toBeNull()
   })
 
+  it('treats a direct visual description as a create command', () => {
+    expect(parse('一匹白马在草原上奔跑')).toMatchObject({
+      action: 'create',
+      prompt: '一匹白马在草原上奔跑',
+      requiresGeneration: true,
+    })
+  })
+
   it('marks object restyling as generation without changing its target', () => {
     expect(parse('把树换成更梦幻的风格')).toMatchObject({
       action: 'modify',
       target: { name: '树' },
       requiresGeneration: true,
     })
+  })
+
+  it.each([
+    ['把奔跑的马向左移动', 'left'],
+    ['把奔跑的马往右放', 'right'],
+    ['把奔跑的马移到右上方', 'top-right'],
+  ])(
+    'moves a generated object with natural direction wording: %s',
+    (text, position) => {
+      expect(parse(text)).toMatchObject({
+        action: 'modify',
+        target: { name: '奔跑的马' },
+        properties: { position },
+        requiresGeneration: false,
+      })
+    },
+  )
+
+  it('does not emit a no-op modify command for an unknown direction', () => {
+    expect(parse('请把奔跑的马放到东北区域')).toBeNull()
+    expect(parse('请重新安排一下奔跑的马，放到画面东北区域')).toBeNull()
   })
 })

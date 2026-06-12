@@ -34,6 +34,7 @@ export function createProject(
     title,
     canvas: DEFAULT_CANVAS,
     globalStyle: '',
+    characterAssets: [],
     layers: [],
     selectedLayerId: null,
     recentLayerIds: [],
@@ -52,6 +53,7 @@ export type NewLayer = Pick<
       | 'id'
       | 'assetUrl'
       | 'prompt'
+      | 'characterAssetId'
       | 'status'
       | 'x'
       | 'y'

@@ -17,6 +17,7 @@ export const layerSchema = z.object({
   type: layerTypeSchema,
   assetUrl: z.string().min(1).optional(),
   prompt: z.string().max(2000).optional(),
+  characterAssetId: z.string().min(1).optional(),
   source: z.enum(['generated', 'preset', 'user']),
   status: assetStatusSchema,
   x: z.number(),
@@ -33,6 +34,19 @@ export const layerSchema = z.object({
   updatedAt: z.iso.datetime(),
 })
 
+export const characterAssetSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1).max(80),
+  identityPrompt: z.string().trim().min(1).max(2000),
+  turnaroundAssetId: z.string().min(1).optional(),
+  turnaroundAssetUrl: z.string().min(1).optional(),
+  referenceAssetId: z.string().min(1),
+  referenceAssetUrl: z.string().min(1),
+  style: z.string().max(500),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+})
+
 export const projectSchema = z
   .object({
     schemaVersion: z.literal(schemaVersion),
@@ -40,6 +54,7 @@ export const projectSchema = z
     title: z.string().trim().min(1).max(120),
     canvas: canvasSettingsSchema,
     globalStyle: z.string().max(500),
+    characterAssets: z.array(characterAssetSchema).max(50).default([]),
     layers: z.array(layerSchema),
     selectedLayerId: z.string().min(1).nullable(),
     recentLayerIds: z.array(z.string().min(1)).max(20),
@@ -84,6 +99,10 @@ export const sceneObjectSchema = z.object({
   name: z.string().trim().min(1).max(80),
   /** LLM增强后的英文正向提示词 */
   prompt: z.string().max(2000),
+  /** 不含动作和环境的稳定角色身份描述 */
+  identityPrompt: z.string().max(2000).optional(),
+  /** 仅描述当前动作、姿态和朝向 */
+  actionPrompt: z.string().max(2000).optional(),
   /** LLM生成的英文负向提示词 */
   negativePrompt: z.string().max(2000).optional(),
   /** 背景类型：前景对象用transparent，背景/场景用opaque */
@@ -183,6 +202,13 @@ export const generateAssetRequestSchema = z.object({
   background: z.enum(['transparent', 'opaque']),
   /** 是否使用LLM增强提示词（当prompt已经是LLM增强后的则为false） */
   enhancedPrompt: z.boolean().optional(),
+  /** 角色生成阶段：设定图或基于设定图派生动作 */
+  generationMode: z
+    .enum(['standard', 'character-sheet', 'character-action'])
+    .optional(),
+  /** character-action 使用的角色设定图素材 ID */
+  referenceAssetId: z.string().regex(/^[a-f0-9]{24}$/).optional(),
+  referenceWeight: z.number().min(0.1).max(2).optional(),
 })
 
 export const generatedAssetSchema = z.object({
@@ -238,6 +264,7 @@ export const appStatusSchema = z.object({
 
 export type CanvasSettings = z.infer<typeof canvasSettingsSchema>
 export type Layer = z.infer<typeof layerSchema>
+export type CharacterAsset = z.infer<typeof characterAssetSchema>
 export type Project = z.infer<typeof projectSchema>
 export type SceneObject = z.infer<typeof sceneObjectSchema>
 export type DrawingCommand = z.infer<typeof drawingCommandSchema>

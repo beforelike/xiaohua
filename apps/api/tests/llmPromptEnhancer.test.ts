@@ -98,4 +98,67 @@ describe('llmPromptEnhancer', () => {
     expect(body.messages[1]?.content).toContain('warm sunset')
     expect(body.messages[1]?.content).toContain('photorealistic')
   })
+
+  it('removes environment leakage from foreground and reserves the background', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  style:
+                    'soft realistic illustration, eye-level camera, warm side light',
+                  objects: [
+                    {
+                      name: '河边场景',
+                      prompt: 'quiet forest riverbank, soft morning light',
+                      negativePrompt: 'text',
+                      background: 'opaque',
+                      isBackground: true,
+                      position: 'center',
+                      size: 'full',
+                    },
+                    {
+                      name: '两匹马',
+                      prompt:
+                        'two horses drinking water from a river, reflections, forest trees, brown and white coats',
+                      negativePrompt: 'bad anatomy',
+                      background: 'transparent',
+                      isBackground: false,
+                      position: 'center',
+                      size: 'medium',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await enhancePrompt(
+      '两匹马在河边喝水',
+      '',
+      { selectedLayerId: null, recentLayers: [], globalStyle: '' },
+      config,
+      fetcher,
+    )
+    const background = result.objects[0]
+    const horses = result.objects[1]
+
+    expect(background?.prompt).toContain('open foreground area reserved')
+    expect(background?.negativePrompt).toContain('horses')
+    expect(horses?.name).toBe('两匹马')
+    expect(horses?.prompt).toContain('exactly two horses')
+    expect(horses?.prompt).toContain('standing upright on all four legs')
+    expect(horses?.prompt).toContain('head lowered in a natural drinking pose')
+    expect(horses?.prompt).not.toMatch(/\b(?:river|water|forest|reflection)\b/i)
+    expect(horses?.prompt).not.toContain('group group')
+    expect(horses?.negativePrompt).not.toContain('multiple subjects')
+    expect(horses?.negativePrompt).toContain('single horse, one horse')
+    expect(horses?.negativePrompt).toContain('river, water, stream')
+  })
 })

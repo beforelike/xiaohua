@@ -62,9 +62,9 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function stubApi(
-  routes: Record<string, () => Response> = {},
+  routes: Record<string, (init?: RequestInit) => Response> = {},
 ): ReturnType<typeof vi.fn<typeof fetch>> {
-  const fetchMock = vi.fn<typeof fetch>(async (input) => {
+  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const url =
       typeof input === 'string'
         ? input
@@ -81,7 +81,7 @@ function stubApi(
       throw new Error(`Unexpected fetch request: ${url}`)
     }
 
-    return route()
+    return route(init)
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -234,10 +234,24 @@ describe('App', () => {
             confidence: 1,
           },
         }),
-      '/api/assets/generate': () =>
-        jsonResponse({
-          asset: { url: '/api/assets/generated', source: 'generated' },
-        }),
+      '/api/assets/generate': (init) => {
+        const body = JSON.parse(String(init?.body)) as {
+          generationMode?: string
+        }
+        const suffix =
+          body.generationMode === 'character-sheet'
+            ? 'character-sheet'
+            : body.generationMode === 'character-action'
+              ? 'character-action'
+              : 'background'
+        return jsonResponse({
+          asset: {
+            id: suffix === 'character-sheet' ? 'a'.repeat(24) : 'b'.repeat(24),
+            url: `/api/assets/${suffix}`,
+            source: 'generated',
+          },
+        })
+      },
     })
     render(<App />)
 
@@ -261,11 +275,13 @@ describe('App', () => {
     })
     expect(horse).toMatchObject({
       name: '马',
+      assetUrl: '/api/assets/character-action',
       y: 392,
       width: 328,
       height: 328,
       zIndex: 1,
     })
+    expect(useProjectStore.getState().project.characterAssets).toHaveLength(1)
     expect(useProjectStore.getState().project.globalStyle).toContain(
       'photorealistic',
     )

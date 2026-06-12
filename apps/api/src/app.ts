@@ -10,7 +10,11 @@ import {
   parseCommandRequestSchema,
 } from '@xiaohua/contracts'
 import type { AppConfig } from './config'
-import { generateAsset, readAsset } from './services/imageGeneration'
+import {
+  generateAsset,
+  ImageGenerationError,
+  readAsset,
+} from './services/imageGeneration'
 import { parseLlmCommand } from './services/llmCommandParser'
 import {
   enhancePrompt,
@@ -63,13 +67,22 @@ export function createRateLimitBuckets(
 export function mapError(error: unknown, requestId: string) {
   const invalidRequest =
     error instanceof SyntaxError || error instanceof ZodError
+  const generationError = error instanceof ImageGenerationError
 
   return {
-    status: invalidRequest ? 400 : 500,
+    status: invalidRequest ? 400 : generationError ? 502 : 500,
     body: {
       error: {
-        code: invalidRequest ? 'INVALID_REQUEST' : 'INTERNAL_ERROR',
-        message: invalidRequest ? '请求内容不合法' : '服务暂时不可用',
+        code: invalidRequest
+          ? 'INVALID_REQUEST'
+          : generationError
+            ? 'GENERATION_FAILED'
+            : 'INTERNAL_ERROR',
+        message: invalidRequest
+          ? '请求内容不合法'
+          : generationError
+            ? error.message
+            : '服务暂时不可用',
         retryable: !invalidRequest,
         requestId,
       },
@@ -136,6 +149,10 @@ export function createApp(config: AppConfig) {
       commandProvider: config.COMMAND_PROVIDER,
       imageProvider: config.IMAGE_PROVIDER,
       asrProvider: config.ASR_PROVIDER,
+      llmConfigured: Boolean(
+        config.LLM_BASE_URL && config.LLM_MODEL && config.LLM_API_KEY,
+      ),
+      llmEnhancePrompt: config.LLM_ENHANCE_PROMPT,
     })
   })
 
@@ -182,17 +199,20 @@ export function createApp(config: AppConfig) {
     try {
       const input = parseCommandRequestSchema.parse(request.body)
       const ruleCommand = parseRuleCommand(input)
+      const llmConfigured = Boolean(
+        config.LLM_BASE_URL && config.LLM_MODEL && config.LLM_API_KEY,
+      )
       let command =
         ruleCommand ??
-        (config.COMMAND_PROVIDER === 'llm'
+        (config.COMMAND_PROVIDER !== 'mock' && llmConfigured
           ? await parseLlmCommand(input, config)
           : null)
 
-      // 所有创建命令都统一经过 LLM 增强，避免预设对象绕过对象分离。
+      // 所有创建命令都统一经过同一套增强器。命令解析 LLM 返回的 objects
+      // 只用于语义理解，不能绕过更严格的图层职责和提示词净化。
       if (
         command &&
         command.action === 'create' &&
-        !command.objects &&
         config.LLM_ENHANCE_PROMPT &&
         config.LLM_BASE_URL &&
         config.LLM_MODEL &&
@@ -216,7 +236,7 @@ export function createApp(config: AppConfig) {
           response.status(502).json({
             error: {
               code: 'GENERATION_FAILED',
-              message: '提示词增强失败，请检查本地 LLM 后重试',
+              message: '提示词增强服务超时或不可用，请稍后重试',
               retryable: true,
               requestId: response.locals.requestId as string,
             },

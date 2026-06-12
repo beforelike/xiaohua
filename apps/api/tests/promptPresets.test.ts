@@ -64,6 +64,42 @@ describe('promptPresets', () => {
       const result = buildPrompt('树', 'opaque')
       expect(result).not.toContain('isolated object')
     })
+
+    it('支持 Fooocus 风格的 {prompt} 模板并去除重复标签', () => {
+      const result = buildPrompt(
+        'red fox, sharp focus',
+        'transparent',
+        'storybook illustration of {prompt}, sharp focus',
+        true,
+      )
+      expect(result).toContain('storybook illustration of red fox')
+      expect(result.match(/sharp focus/g)).toHaveLength(1)
+      expect(result.match(/isolated object/g)).toHaveLength(1)
+      expect(result).toContain('entire object fully visible')
+      expect(result).toContain('generous empty margin on all sides')
+    })
+
+    it('增强提示词不会再次注入通用质量词', () => {
+      const result = buildPrompt(
+        'a red fox',
+        'opaque',
+        'watercolor illustration',
+        true,
+      )
+      expect(result).not.toContain('masterpiece')
+      expect(result).toBe('watercolor illustration, a red fox')
+    })
+
+    it('多主体前景使用 subject group 而不是 single subject', () => {
+      const result = buildPrompt(
+        'two horses lowering their heads',
+        'transparent',
+        'realistic illustration',
+        true,
+      )
+      expect(result).toContain('isolated subject group')
+      expect(result).not.toContain('single subject')
+    })
   })
 
   describe('buildNegativePrompt with presets', () => {
@@ -85,6 +121,25 @@ describe('promptPresets', () => {
       // 草地预设没有 negativeExtra
       const grassPreset = findPreset('草地')
       expect(grassPreset?.negativeExtra).toBeUndefined()
+    })
+
+    it('前景对象追加隔离和形体约束并去除重复负向词', () => {
+      const result = buildNegativePrompt(
+        '小猫',
+        'watermark, extra limbs',
+        'transparent',
+      )
+      expect(result).toContain('complex background')
+      expect(result).toContain('close-up')
+      expect(result).toContain('extra limbs')
+      expect(result.match(/watermark/g)).toHaveLength(1)
+      expect(result.match(/extra limbs/g)).toHaveLength(1)
+    })
+
+    it('背景层不注入前景对象专用负向词', () => {
+      const result = buildNegativePrompt('草地', undefined, 'opaque')
+      expect(result).not.toContain('extra limbs')
+      expect(result).not.toContain('complex background')
     })
   })
 })

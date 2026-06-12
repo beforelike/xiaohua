@@ -1,4 +1,9 @@
-import type { DrawingCommand, Layer, Project } from '@xiaohua/contracts'
+import type {
+  CharacterAsset,
+  DrawingCommand,
+  Layer,
+  Project,
+} from '@xiaohua/contracts'
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import {
   executeCommand,
@@ -20,6 +25,9 @@ export interface ProjectStore {
     id: string,
     asset: Pick<Layer, 'assetUrl' | 'source'> & { prompt?: string },
   ) => boolean
+  addCharacterAsset: (
+    input: Omit<CharacterAsset, 'createdAt' | 'updatedAt'>,
+  ) => CharacterAsset
   execute: (command: DrawingCommand) => CommandResult
   replaceProject: (project: Project) => void
 }
@@ -63,6 +71,29 @@ export function createProjectStore(
         lastResult: null,
       })
       return true
+    },
+    addCharacterAsset: (input) => {
+      const current = get().project
+      const timestamp = now()
+      const asset = {
+        ...input,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      set({
+        project: {
+          ...current,
+          characterAssets: [
+            ...current.characterAssets.filter(
+              (candidate) => candidate.id !== asset.id,
+            ),
+            asset,
+          ],
+          updatedAt: timestamp,
+        },
+        lastResult: null,
+      })
+      return asset
     },
     execute: (command) => {
       const result = executeCommand(get().project, command, now())
