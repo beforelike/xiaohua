@@ -1,9 +1,18 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { DrawingCommand, Layer } from '@xiaohua/contracts'
 import './App.css'
-import { LayerCanvas } from './features/canvas/LayerCanvas'
+import {
+  LayerCanvas,
+  type LayerCanvasHandle,
+} from './features/canvas/LayerCanvas'
 import { LayerPanel } from './features/layers/LayerPanel'
 import { presets } from './features/presets/presets'
+import {
+  downloadBlob,
+  downloadProject,
+  parseProject,
+} from './features/project/downloads'
+import { useSpeechRecognition } from './features/voice/useSpeechRecognition'
 import { useProjectStore } from './stores/projectStore'
 
 function App() {
@@ -12,14 +21,80 @@ function App() {
   const execute = useProjectStore((state) => state.execute)
   const lastResult = useProjectStore((state) => state.lastResult)
   const [text, setText] = useState('')
+  const [status, setStatus] = useState(
+    '准备好了。添加素材或输入一句绘图指令吧。',
+  )
+  const canvasRef = useRef<LayerCanvasHandle>(null)
+  const importRef = useRef<HTMLInputElement>(null)
 
-  const runCommand = (command: DrawingCommand) => {
-    execute(command)
+  const runCommand = async (command: DrawingCommand) => {
+    if (command.action === 'create') {
+      setStatus('正在准备新素材…')
+      const preset = presets.find(
+        (candidate) => candidate.label === command.properties?.name,
+      )
+      if (preset) {
+        const layer = addReadyLayer(preset.layer)
+        if (command.properties?.position) {
+          execute({
+            ...command,
+            action: 'modify',
+            target: { id: layer.id },
+            requiresGeneration: false,
+          })
+        }
+        setStatus(`已添加${preset.label}`)
+        return
+      }
+      const response = await fetch('/api/assets/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          commandId: command.id,
+          prompt: command.prompt ?? command.properties?.name ?? '童话元素',
+          width: 512,
+          height: 512,
+          background: 'transparent',
+        }),
+      })
+      if (!response.ok) {
+        setStatus('素材生成失败，请稍后重试。')
+        return
+      }
+      const payload = (await response.json()) as {
+        asset: { url: string; source: 'generated' | 'preset' }
+      }
+      addReadyLayer({
+        name: command.properties?.name ?? '新元素',
+        type: 'image',
+        source: payload.asset.source,
+        assetUrl: payload.asset.url,
+        prompt: command.prompt,
+        width: 320,
+        height: 320,
+        createdBy: 'voice',
+      })
+      setStatus('新素材已经加入画布')
+      return
+    }
+    if (command.action === 'save') {
+      downloadProject(project)
+      const dataUrl = canvasRef.current?.toDataUrl()
+      if (dataUrl) {
+        const blob = await (await fetch(dataUrl)).blob()
+        downloadBlob(blob, `${project.title}.png`)
+      }
+      setStatus('作品 PNG 和项目文件已导出')
+      return
+    }
+    const result = execute(command)
+    setStatus(result.message)
   }
 
   const selectLayer = (id: string) => {
     if (!id) return
-    runCommand({
+    void runCommand({
       schemaVersion: 1,
       id: crypto.randomUUID(),
       action: 'select',
@@ -33,7 +108,7 @@ function App() {
     id: string,
     values: Pick<Layer, 'x' | 'y' | 'width' | 'height' | 'rotation'>,
   ) => {
-    runCommand({
+    void runCommand({
       schemaVersion: 1,
       id: crypto.randomUUID(),
       action: 'modify',
@@ -66,9 +141,26 @@ function App() {
     })
     if (!response.ok) return
     const payload = (await response.json()) as { command: DrawingCommand }
-    runCommand(payload.command)
+    await runCommand(payload.command)
     setText('')
   }
+
+  const importProject = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      useProjectStore.getState().replaceProject(parseProject(await file.text()))
+      setStatus('项目已导入')
+    } catch {
+      setStatus('项目文件不合法，未修改当前作品。')
+    }
+    event.target.value = ''
+  }
+
+  const speech = useSpeechRecognition((transcript) => {
+    setText(transcript)
+    setStatus('语音已识别，请确认后执行。')
+  })
 
   return (
     <main className="app-shell">
@@ -84,10 +176,26 @@ function App() {
           <span>当前作品</span>
           <strong>{project.title}</strong>
         </div>
-        <div className="system-status">
-          <span className="status-dot" />
-          本地服务已连接
+        <div className="header-actions">
+          <div className="system-status">
+            <span className="status-dot" />
+            本地服务已连接
+          </div>
+          <button
+            className="import-button"
+            type="button"
+            onClick={() => importRef.current?.click()}
+          >
+            导入项目
+          </button>
         </div>
+        <input
+          ref={importRef}
+          className="visually-hidden"
+          type="file"
+          accept=".json,application/json"
+          onChange={importProject}
+        />
       </header>
 
       <div className="studio-layout">
@@ -119,14 +227,27 @@ function App() {
             <span>{project.layers.length} 个图层</span>
           </div>
           <LayerCanvas
+            ref={canvasRef}
             project={project}
             onSelect={selectLayer}
             onTransform={transformLayer}
           />
           <form className="command-bar" onSubmit={submitTextCommand}>
-            <span className="voice-orb" aria-hidden="true">
+            <button
+              className={`voice-orb ${speech.listening ? 'is-listening' : ''}`}
+              type="button"
+              disabled={!speech.supported}
+              aria-label={
+                speech.supported
+                  ? speech.listening
+                    ? '停止语音输入'
+                    : '开始语音输入'
+                  : '当前浏览器不支持语音输入'
+              }
+              onClick={speech.toggle}
+            >
               ◉
-            </span>
+            </button>
             <label>
               <span>语音调试输入</span>
               <input
@@ -138,9 +259,9 @@ function App() {
             <button type="submit">执行</button>
           </form>
           <p className="feedback" aria-live="polite">
-            {lastResult
+            {lastResult && status.startsWith('准备好了')
               ? lastResult.message
-              : '准备好了。添加素材或输入一句绘图指令吧。'}
+              : status}
           </p>
         </section>
 

@@ -126,8 +126,10 @@ describe('App', () => {
         JSON.stringify({
           command: {
             schemaVersion: 1,
-            id: 'save-command',
-            action: 'save',
+            id: 'create-command',
+            action: 'create',
+            objectType: 'preset',
+            properties: { name: '太阳' },
             requiresGeneration: false,
             confidence: 1,
           },
@@ -140,13 +142,37 @@ describe('App', () => {
 
     fireEvent.change(
       screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
-      { target: { value: '保存作品' } },
+      { target: { value: '画一个太阳' } },
     )
     fireEvent.click(screen.getByRole('button', { name: '执行' }))
 
     await waitFor(() =>
-      expect(screen.getByText('作品已准备导出')).toBeInTheDocument(),
+      expect(screen.getByText('已添加太阳')).toBeInTheDocument(),
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses browser speech recognition as an optional fallback', () => {
+    const start = vi.fn()
+    class Recognition {
+      lang = ''
+      continuous = false
+      interimResults = false
+      onresult = null
+      onerror = null
+      onend = null
+      start = start
+      stop = vi.fn()
+    }
+    window.SpeechRecognition = Recognition
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '开始语音输入' }))
+
+    expect(start).toHaveBeenCalledOnce()
+    expect(
+      screen.getByRole('button', { name: '停止语音输入' }),
+    ).toBeInTheDocument()
+    delete window.SpeechRecognition
   })
 })

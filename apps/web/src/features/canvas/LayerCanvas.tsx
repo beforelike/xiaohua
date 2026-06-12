@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import {
   Image,
   Layer as KonvaLayer,
@@ -104,60 +110,68 @@ interface LayerCanvasProps {
   ) => void
 }
 
-export function LayerCanvas({
-  project,
-  onSelect,
-  onTransform,
-}: LayerCanvasProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(720)
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const update = () => setWidth(container.clientWidth)
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(container)
-    return () => observer.disconnect()
-  }, [])
-
-  const scale = width / project.canvas.width
-
-  return (
-    <div className="canvas-frame" ref={containerRef}>
-      <Stage
-        width={width}
-        height={project.canvas.height * scale}
-        scaleX={scale}
-        scaleY={scale}
-        onMouseDown={(event) => {
-          if (event.target === event.target.getStage()) onSelect('')
-        }}
-      >
-        <KonvaLayer>
-          <Rect
-            width={project.canvas.width}
-            height={project.canvas.height}
-            fill={project.canvas.backgroundColor}
-          />
-          {project.layers.map((layer) => (
-            <CanvasLayer
-              key={layer.id}
-              layer={layer}
-              selected={layer.id === project.selectedLayerId}
-              onSelect={() => onSelect(layer.id)}
-              onTransform={(values) => onTransform(layer.id, values)}
-            />
-          ))}
-        </KonvaLayer>
-      </Stage>
-      {project.layers.length === 0 ? (
-        <div className="empty-canvas">
-          <span>画布空空的</span>
-          <p>从左侧添加一个预设素材，或在下方输入绘图指令。</p>
-        </div>
-      ) : null}
-    </div>
-  )
+export interface LayerCanvasHandle {
+  toDataUrl: () => string | null
 }
+
+export const LayerCanvas = forwardRef<LayerCanvasHandle, LayerCanvasProps>(
+  function LayerCanvas({ project, onSelect, onTransform }, ref) {
+    const containerRef = useRef<HTMLDivElement>(null)
+    const stageRef = useRef<Konva.Stage>(null)
+    const [width, setWidth] = useState(720)
+
+    useEffect(() => {
+      const container = containerRef.current
+      if (!container) return
+      const update = () => setWidth(container.clientWidth)
+      update()
+      const observer = new ResizeObserver(update)
+      observer.observe(container)
+      return () => observer.disconnect()
+    }, [])
+
+    const scale = width / project.canvas.width
+    useImperativeHandle(ref, () => ({
+      toDataUrl: () =>
+        stageRef.current?.toDataURL({ pixelRatio: 1 / scale }) ?? null,
+    }))
+
+    return (
+      <div className="canvas-frame" ref={containerRef}>
+        <Stage
+          ref={stageRef}
+          width={width}
+          height={project.canvas.height * scale}
+          scaleX={scale}
+          scaleY={scale}
+          onMouseDown={(event) => {
+            if (event.target === event.target.getStage()) onSelect('')
+          }}
+        >
+          <KonvaLayer>
+            <Rect
+              width={project.canvas.width}
+              height={project.canvas.height}
+              fill={project.canvas.backgroundColor}
+            />
+            {project.layers.map((layer) => (
+              <CanvasLayer
+                key={layer.id}
+                layer={layer}
+                selected={layer.id === project.selectedLayerId}
+                onSelect={() => onSelect(layer.id)}
+                onTransform={(values) => onTransform(layer.id, values)}
+              />
+            ))}
+          </KonvaLayer>
+        </Stage>
+        {project.layers.length === 0 ? (
+          <div className="empty-canvas">
+            <span>画布空空的</span>
+            <p>从左侧添加一个预设素材，或在下方输入绘图指令。</p>
+          </div>
+        ) : null}
+      </div>
+    )
+  },
+)

@@ -73,12 +73,39 @@
 }
 
 .system-status {
-  justify-self: end;
   display: flex;
   align-items: center;
   gap: 9px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.header-actions {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.import-button {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .status-dot {
@@ -238,6 +265,17 @@
   color: #fffdf7;
   background: var(--terracotta);
   box-shadow: 0 0 0 7px rgba(185, 87, 62, 0.1);
+  border: 0;
+  cursor: pointer;
+}
+
+.voice-orb:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.voice-orb.is-listening {
+  animation: listening 1s ease-in-out infinite alternate;
 }
 
 .command-bar label span {
@@ -258,12 +296,18 @@
   font-size: 14px;
 }
 
-.command-bar button {
+.command-bar > button[type='submit'] {
   padding: 10px 18px;
   border: 1px solid var(--ink);
   background: var(--ink);
   color: #fffdf7;
   cursor: pointer;
+}
+
+@keyframes listening {
+  to {
+    box-shadow: 0 0 0 13px rgba(185, 87, 62, 0.16);
+  }
 }
 
 .feedback {
