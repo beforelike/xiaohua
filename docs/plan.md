@@ -4,7 +4,7 @@
 
 ```text
 Microphone
-  -> SpeechRecognitionAdapter
+  -> local SpeechRecognitionAdapter
   -> transcript
   -> POST /api/commands/parse
   -> Command Schema validation
@@ -12,6 +12,7 @@ Microphone
   -> CommandExecutor
        -> local layer mutation
        -> POST /api/assets/generate
+            -> local Stable Diffusion WebUI /sdapi/v1/txt2img
   -> Zustand project store
   -> React Konva canvas
   -> status feedback
@@ -50,7 +51,7 @@ P1 也可作为单个全栈应用落地，但领域模块和共享契约仍按�
 - `commands`：Schema、解析、目标消歧和命令执行。
 - `canvas`：节点渲染、坐标换算、选择框和 PNG 导出。
 - `layers`：增删改查、层级、选中状态和边界约束。
-- `providers`：指令模型、图片生成、预设素材和 Mock 适配器。
+- `providers`：本地 ASR、规则/本地模型指令解析、Stable Diffusion WebUI、预设素材和 Mock 适配器。
 - `project`：JSON 导入导出、Schema 版本和迁移。
 - `feedback`：状态机、中文提示和可访问性公告。
 
@@ -70,12 +71,12 @@ P1 也可作为单个全栈应用落地，但领域模块和共享契约仍按�
 - 初始化工程、质量工具和 CI。
 - 建立共享契约、项目 store 与 Mock 数据。
 - 实现画布、图层列表、选中、删除、移动、缩放和层级调整。
-- 接入语音识别与本地 Mock 命令。
+- 接入本地 ASR 与文本 Mock 命令。
 - 实现项目 JSON 与 PNG 导出。
 
 ### 第二天：AI 闭环
 
-- 接入服务端指令解析和图片生成适配器。
+- 接入本地规则解析和 Stable Diffusion WebUI 图片生成适配器。
 - 完成上下文目标解析、歧义确认与状态反馈。
 - 增加预设素材、超时、重试和透明背景降级。
 - 补齐单元、集成和端到端测试。
@@ -91,7 +92,7 @@ P1 也可作为单个全栈应用落地，但领域模块和共享契约仍按�
 
 ## 7. CI 与发布
 
-PR 执行 lint、typecheck、unit test 和 build；关键功能补充 e2e。部署只从通过评审的 `main` 产生。环境变量在部署平台配置，预览环境使用低额度密钥或 Mock。
+PR 执行 lint、typecheck、unit test 和 build；关键功能补充 e2e。部署只从通过评审的 `main` 产生。本地服务地址通过环境变量配置，CI 使用 Mock。
 
 ## 8. 准则合规检查
 
