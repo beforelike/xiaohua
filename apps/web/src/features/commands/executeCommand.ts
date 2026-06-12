@@ -198,6 +198,10 @@ export function executeCommand(
     if (properties?.position) {
       nextLayer = positionLayer(nextLayer, project, properties.position)
     }
+    if (properties?.x !== undefined) nextLayer.x = properties.x
+    if (properties?.y !== undefined) nextLayer.y = properties.y
+    if (properties?.width !== undefined) nextLayer.width = properties.width
+    if (properties?.height !== undefined) nextLayer.height = properties.height
     const scale =
       properties?.scaleDelta ??
       (properties?.size === 'larger'

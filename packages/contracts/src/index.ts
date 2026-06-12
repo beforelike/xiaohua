@@ -99,6 +99,10 @@ export const drawingCommandSchema = z.object({
     .object({
       position: z.string().max(80).optional(),
       size: z.string().max(80).optional(),
+      x: z.number().optional(),
+      y: z.number().optional(),
+      width: z.number().positive().optional(),
+      height: z.number().positive().optional(),
       color: z.string().max(80).optional(),
       rotation: z.number().optional(),
       scaleDelta: z.number().optional(),

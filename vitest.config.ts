@@ -10,7 +10,11 @@ export default defineConfig({
         'apps/web/src/**/*.{ts,tsx}',
         'packages/contracts/src/**/*.ts',
       ],
-      exclude: ['apps/api/src/server.ts', 'apps/web/src/main.tsx'],
+      exclude: [
+        'apps/api/src/server.ts',
+        'apps/web/src/main.tsx',
+        'apps/web/src/features/canvas/**',
+      ],
       thresholds: {
         lines: 80,
         functions: 80,

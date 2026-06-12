@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
@@ -13,8 +13,11 @@
   },
   "dependencies": {
     "@xiaohua/contracts": "*",
+    "konva": "^10.3.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-konva": "^19.2.5",
+    "use-image": "^1.1.4",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
