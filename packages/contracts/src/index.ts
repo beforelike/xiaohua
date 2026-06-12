@@ -137,6 +137,20 @@ export const generateAssetRequestSchema = z.object({
   background: z.enum(['transparent', 'opaque']),
 })
 
+export const generatedAssetSchema = z.object({
+  id: z.string().min(1),
+  url: z.string().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  mimeType: z.enum(['image/png', 'image/svg+xml']),
+  backgroundRemoved: z.boolean(),
+  source: z.enum(['generated', 'preset']),
+})
+
+export const generateAssetResponseSchema = z.object({
+  asset: generatedAssetSchema,
+})
+
 export const apiErrorCodeSchema = z.enum([
   'INVALID_REQUEST',
   'UNSUPPORTED_COMMAND',
@@ -162,4 +176,5 @@ export type Project = z.infer<typeof projectSchema>
 export type DrawingCommand = z.infer<typeof drawingCommandSchema>
 export type ParseCommandRequest = z.infer<typeof parseCommandRequestSchema>
 export type GenerateAssetRequest = z.infer<typeof generateAssetRequestSchema>
+export type GeneratedAsset = z.infer<typeof generatedAssetSchema>
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>

@@ -1,0 +1,110 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AppConfig } from '../src/config'
+import {
+  generateAsset,
+  readAsset,
+  resolveAssetPath,
+} from '../src/services/imageGeneration'
+
+const directories: string[] = []
+
+async function createConfig(
+  imageProvider: AppConfig['IMAGE_PROVIDER'] = 'stable-diffusion-webui',
+) {
+  const directory = await mkdtemp(path.join(tmpdir(), 'xiaohua-assets-'))
+  directories.push(directory)
+  return {
+    HOST: '127.0.0.1',
+    PORT: 8787,
+    WEB_ORIGIN: 'http://127.0.0.1:5173',
+    COMMAND_PROVIDER: 'rules',
+    IMAGE_PROVIDER: imageProvider,
+    SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
+    ASSET_CACHE_DIR: directory,
+    ASR_PROVIDER: 'mock',
+  } satisfies AppConfig
+}
+
+const request = {
+  schemaVersion: 1 as const,
+  commandId: 'command-1',
+  prompt: '一个可爱的太阳',
+  width: 256,
+  height: 256,
+  background: 'transparent' as const,
+}
+
+afterEach(async () => {
+  await Promise.all(
+    directories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  )
+})
+
+describe('imageGeneration', () => {
+  it('stores and serves a generated PNG', async () => {
+    const config = await createConfig()
+    const png = Buffer.from('png-data')
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    const asset = await generateAsset(request, config, fetcher)
+    const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
+
+    expect(asset.source).toBe('generated')
+    expect(stored?.mimeType).toBe('image/png')
+    expect(stored?.body).toEqual(png)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the idempotent cache', async () => {
+    const config = await createConfig()
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ images: [Buffer.from('png').toString('base64')] }),
+          { status: 200 },
+        ),
+      )
+
+    await generateAsset(request, config, fetcher)
+    await generateAsset(request, config, fetcher)
+
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to a local SVG after two provider failures', async () => {
+    const config = await createConfig()
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error('offline'))
+
+    const asset = await generateAsset(request, config, fetcher)
+    const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
+
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(asset).toMatchObject({
+      source: 'preset',
+      mimeType: 'image/svg+xml',
+    })
+    expect(stored?.body.toString()).toContain('<svg')
+  })
+
+  it('rejects unsafe asset IDs', async () => {
+    const config = await createConfig('mock')
+    expect(resolveAssetPath(config.ASSET_CACHE_DIR, '../secret')).toBeNull()
+    expect(await readAsset(config.ASSET_CACHE_DIR, '../secret')).toBeNull()
+    await expect(
+      readFile(path.join(config.ASSET_CACHE_DIR, 'secret')),
+    ).rejects.toThrow()
+  })
+})

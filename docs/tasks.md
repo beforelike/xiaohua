@@ -30,16 +30,16 @@
 
 - [ ] T301 实现本地 ASR 适配器、健康检查和文本 Mock。
 - [ ] T302 实现监听、识别、解析、成功和失败状态机。
-- [ ] T303 实现 `/commands/parse`、本地规则和可选本地模型 provider。
-- [ ] T304 实现本地常用命令快速解析。
+- [x] T303 实现 `/commands/parse`、本地规则和可选本地模型 provider。
+- [x] T304 实现本地常用命令快速解析。
 - [ ] T305 实现按 ID、名称、选中和最近对象的目标解析。
 - [ ] T306 实现低置信度与多目标确认流程。
 
 ## 阶段 4：图片生成
 
-- [ ] T401 实现 `/assets/generate` 和图片 provider 接口。
-- [ ] T402 接入本地 Stable Diffusion WebUI `/sdapi/v1/txt2img`。
-- [ ] T403 实现超时、一次重试、幂等缓存和预设降级。
+- [x] T401 实现 `/assets/generate` 和图片 provider 接口。
+- [x] T402 接入本地 Stable Diffusion WebUI `/sdapi/v1/txt2img`。
+- [x] T403 实现超时、一次重试、幂等缓存和预设降级。
 - [ ] T404 实现同源素材代理和透明背景检查。
 - [ ] T405 实现对象重新生成且保留变换属性。
 

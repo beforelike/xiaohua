@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto'
 import cors from 'cors'
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
 import { ZodError } from 'zod'
+import {
+  generateAssetRequestSchema,
+  parseCommandRequestSchema,
+} from '@xiaohua/contracts'
 import type { AppConfig } from './config'
+import { generateAsset, readAsset } from './services/imageGeneration'
+import { parseLlmCommand } from './services/llmCommandParser'
+import { parseRuleCommand } from './services/ruleCommandParser'
 
 export function mapError(error: unknown, requestId: string) {
   const invalidRequest =
@@ -42,6 +49,66 @@ export function createApp(config: AppConfig) {
       imageProvider: config.IMAGE_PROVIDER,
       asrProvider: config.ASR_PROVIDER,
     })
+  })
+
+  app.post('/api/commands/parse', async (request, response, next) => {
+    try {
+      const input = parseCommandRequestSchema.parse(request.body)
+      const ruleCommand = parseRuleCommand(input)
+      const command =
+        ruleCommand ??
+        (config.COMMAND_PROVIDER === 'llm'
+          ? await parseLlmCommand(input, config)
+          : null)
+      if (!command) {
+        response.status(422).json({
+          error: {
+            code: 'UNSUPPORTED_COMMAND',
+            message: '暂时无法理解这条指令，请换一种说法',
+            retryable: false,
+            requestId: response.locals.requestId as string,
+          },
+        })
+        return
+      }
+      response.json({ command })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/assets/generate', async (request, response, next) => {
+    try {
+      const input = generateAssetRequestSchema.parse(request.body)
+      response.json({ asset: await generateAsset(input, config) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/assets/:id', async (request, response, next) => {
+    try {
+      const asset = await readAsset(config.ASSET_CACHE_DIR, request.params.id)
+      if (!asset) {
+        response.status(404).json({
+          error: {
+            code: 'INVALID_REQUEST',
+            message: '素材不存在',
+            retryable: false,
+            requestId: response.locals.requestId as string,
+          },
+        })
+        return
+      }
+      response
+        .set({
+          'content-type': asset.mimeType,
+          'cache-control': 'private, max-age=86400',
+        })
+        .send(asset.body)
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.use((_request, response) => {
