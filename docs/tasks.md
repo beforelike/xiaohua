@@ -14,7 +14,7 @@
 - [x] T101 初始化 React、TypeScript、Vite 工程。
 - [x] T102 建立 Node.js API 应用和共享 contracts 包。
 - [x] T103 配置 ESLint、Prettier、Vitest、Playwright 和严格类型检查。
-- [ ] T104 配置 GitHub Actions，执行 lint、typecheck、test、build。
+- [x] T104 配置 GitHub Actions，执行 lint、typecheck、test、build。
 - [x] T105 提供 `.env.example` 和 Mock provider，禁止真实密钥入库。
 
 ## 阶段 2：画布与图层
@@ -48,7 +48,7 @@
 - [x] T501 实现 PNG 导出并处理跨域错误。
 - [x] T502 实现版本化项目 JSON 导出与导入。
 - [x] T503 添加命令解析和状态变更单元测试集。
-- [ ] T504 添加完整演示流程端到端测试。
+- [x] T504 添加完整演示流程端到端测试。
 - [ ] T505 完成真实麦克风、真实 API、权限拒绝和弱网验收。
 - [ ] T506 部署预览环境并记录上线验证结果。
 - [ ] T507 录制演示视频并更新最终 README 截图。
