@@ -4,7 +4,7 @@
 
 ## 项目状态
 
-当前仓库处于规范与方案设计阶段。本文档集已明确 P1 范围、验收标准、技术方案、数据模型、接口契约和开发任务，尚未声明任何未实现功能已经完成。
+当前仓库已完成 React、TypeScript、Vite 前端工程骨架。P1 范围、验收标准、技术方案、数据模型、接口契约和开发任务已经明确，画布、语音、生成与导出能力仍在后续任务中开发。
 
 ## P1 能力
 
@@ -47,10 +47,13 @@
 
 ```text
 .
+├── apps/
+│   └── web/                 # React + TypeScript + Vite 前端
 ├── .github/                 # PR 模板
 ├── doc/                     # 原始需求与研发规范
 ├── docs/                    # 规范驱动开发文档
 │   └── contracts/           # 接口契约
+├── package.json             # npm workspace 与根命令
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md

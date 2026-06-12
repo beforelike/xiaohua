@@ -1,0 +1,17 @@
+{
+  "name": "xiaohua",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @xiaohua/web",
+    "build": "npm run build --workspace @xiaohua/web"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}

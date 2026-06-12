@@ -11,7 +11,7 @@
 
 ## 阶段 1：工程骨架
 
-- [ ] T101 初始化 React、TypeScript、Vite 工程。
+- [x] T101 初始化 React、TypeScript、Vite 工程。
 - [ ] T102 建立 Node.js API 应用和共享 contracts 包。
 - [ ] T103 配置 ESLint、Prettier、Vitest、Playwright 和严格类型检查。
 - [ ] T104 配置 GitHub Actions，执行 lint、typecheck、test、build。
