@@ -2,19 +2,29 @@ import request from 'supertest'
 import { describe, expect, it } from 'vitest'
 import { apiErrorSchema } from '@xiaohua/contracts'
 import { z } from 'zod'
-import { createApp, mapError } from '../src/app'
+import { createApp, createRateLimitBuckets, mapError } from '../src/app'
 import { getConfig } from '../src/config'
 
 const config = getConfig({
   HOST: '127.0.0.1',
   PORT: '8787',
-  WEB_ORIGIN: 'http://127.0.0.1:5173',
+  WEB_ORIGIN: 'http://127.0.0.1:5173,http://127.0.0.1:5174',
   COMMAND_PROVIDER: 'mock',
   IMAGE_PROVIDER: 'mock',
   ASR_PROVIDER: 'mock',
 })
 
 describe('API application', () => {
+  it('defaults local development to WebUI generation and both Vite origins', () => {
+    const defaults = getConfig({})
+
+    expect(defaults.IMAGE_PROVIDER).toBe('stable-diffusion-webui')
+    expect(defaults.WEB_ORIGIN.split(',')).toEqual([
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+    ])
+  })
+
   it('returns provider-safe health information', async () => {
     const response = await request(createApp(config)).get('/api/health')
 
@@ -61,14 +71,14 @@ describe('API application', () => {
     const response = await request(app)
       .get('/api/health')
       .set('x-request-id', 'limited-request')
-      .set('origin', config.WEB_ORIGIN)
+      .set('origin', 'http://127.0.0.1:5174')
     const body = apiErrorSchema.parse(response.body)
 
     expect(response.status).toBe(429)
     expect(response.headers['retry-after']).toBe('60')
     expect(response.headers['x-ratelimit-remaining']).toBe('0')
     expect(response.headers['access-control-allow-origin']).toBe(
-      config.WEB_ORIGIN,
+      'http://127.0.0.1:5174',
     )
     expect(body.error).toEqual({
       code: 'PROVIDER_LIMIT',
@@ -76,6 +86,29 @@ describe('API application', () => {
       retryable: true,
       requestId: 'limited-request',
     })
+  })
+
+  it('does not grant CORS access to unconfigured origins', async () => {
+    const response = await request(createApp(config))
+      .get('/api/health')
+      .set('origin', 'http://example.com')
+
+    expect(response.status).toBe(200)
+    expect(response.headers).not.toHaveProperty('access-control-allow-origin')
+  })
+
+  it('removes expired rate limit buckets during lazy cleanup', () => {
+    let now = 0
+    const buckets = createRateLimitBuckets(1_000, () => now)
+
+    buckets.consume('client-1')
+    now = 500
+    buckets.consume('client-2')
+    expect(buckets.size()).toBe(2)
+
+    now = 1_000
+    buckets.consume('client-3')
+    expect(buckets.size()).toBe(2)
   })
 
   it('maps validation and internal errors without leaking details', () => {

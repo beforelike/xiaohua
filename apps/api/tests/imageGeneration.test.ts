@@ -103,6 +103,36 @@ describe('imageGeneration', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('separates cache entries by image provider', async () => {
+    const config = await createConfig('mock')
+    const mockAsset = await generateAsset(request, config)
+    const png = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+        status: 200,
+      }),
+    )
+
+    const generatedAsset = await generateAsset(
+      request,
+      { ...config, IMAGE_PROVIDER: 'stable-diffusion-webui' },
+      fetcher,
+    )
+
+    expect(generatedAsset.id).not.toBe(mockAsset.id)
+    expect(generatedAsset.source).toBe('generated')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
   it('falls back to a local SVG after two provider failures', async () => {
     const config = await createConfig()
     const fetcher = vi

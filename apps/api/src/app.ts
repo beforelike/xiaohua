@@ -12,6 +12,45 @@ import { parseLlmCommand } from './services/llmCommandParser'
 import { parseRuleCommand } from './services/ruleCommandParser'
 import { checkAsrHealth, transcribeAudio } from './services/asrProvider'
 
+interface RateLimitBucket {
+  windowStartedAt: number
+  count: number
+}
+
+export function createRateLimitBuckets(
+  windowMs: number,
+  now: () => number = Date.now,
+) {
+  const buckets = new Map<string, RateLimitBucket>()
+  let nextCleanupAt = now() + windowMs
+
+  return {
+    consume(key: string) {
+      const currentTime = now()
+      if (currentTime >= nextCleanupAt) {
+        for (const [bucketKey, bucket] of buckets) {
+          if (currentTime - bucket.windowStartedAt >= windowMs) {
+            buckets.delete(bucketKey)
+          }
+        }
+        nextCleanupAt = currentTime + windowMs
+      }
+
+      const current = buckets.get(key)
+      const bucket =
+        !current || currentTime - current.windowStartedAt >= windowMs
+          ? { windowStartedAt: currentTime, count: 0 }
+          : current
+      bucket.count += 1
+      buckets.set(key, bucket)
+      return { bucket, now: currentTime }
+    },
+    size() {
+      return buckets.size
+    },
+  }
+}
+
 export function mapError(error: unknown, requestId: string) {
   const invalidRequest =
     error instanceof SyntaxError || error instanceof ZodError
@@ -31,10 +70,12 @@ export function mapError(error: unknown, requestId: string) {
 
 export function createApp(config: AppConfig) {
   const app = express()
-  const rateLimitBuckets = new Map<
-    string,
-    { windowStartedAt: number; count: number }
-  >()
+  const rateLimitBuckets = createRateLimitBuckets(config.RATE_LIMIT_WINDOW_MS)
+  const allowedWebOrigins = new Set(
+    config.WEB_ORIGIN.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  )
 
   app.disable('x-powered-by')
   const requestId: RequestHandler = (request, response, next) => {
@@ -44,17 +85,16 @@ export function createApp(config: AppConfig) {
     next()
   }
   app.use(requestId)
-  app.use(cors({ origin: config.WEB_ORIGIN }))
+  app.use(
+    cors({
+      origin(origin, callback) {
+        callback(null, !origin || allowedWebOrigins.has(origin))
+      },
+    }),
+  )
   app.use((request, response, next) => {
-    const now = Date.now()
     const key = request.ip ?? request.socket.remoteAddress ?? 'unknown'
-    const current = rateLimitBuckets.get(key)
-    const bucket =
-      !current || now - current.windowStartedAt >= config.RATE_LIMIT_WINDOW_MS
-        ? { windowStartedAt: now, count: 0 }
-        : current
-    bucket.count += 1
-    rateLimitBuckets.set(key, bucket)
+    const { bucket, now } = rateLimitBuckets.consume(key)
 
     const remaining = Math.max(config.RATE_LIMIT_MAX - bucket.count, 0)
     response.setHeader('x-ratelimit-limit', config.RATE_LIMIT_MAX)

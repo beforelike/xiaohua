@@ -21,7 +21,6 @@ function App() {
   const addReadyLayer = useProjectStore((state) => state.addReadyLayer)
   const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
   const execute = useProjectStore((state) => state.execute)
-  const lastResult = useProjectStore((state) => state.lastResult)
   const [text, setText] = useState('')
   const [status, setStatus] = useState(
     '准备好了。添加素材或输入一句绘图指令吧。',
@@ -33,7 +32,7 @@ function App() {
     candidates?: Layer[]
   } | null>(null)
 
-  const runCommand = async (
+  const executeCommand = async (
     command: DrawingCommand,
     confirmed = false,
   ): Promise<void> => {
@@ -43,23 +42,7 @@ function App() {
       return
     }
     if (command.action === 'create') {
-      setStatus('正在准备新素材…')
-      const preset = presets.find(
-        (candidate) => candidate.label === command.properties?.name,
-      )
-      if (preset) {
-        const layer = addReadyLayer(preset.layer)
-        if (command.properties?.position) {
-          execute({
-            ...command,
-            action: 'modify',
-            target: { id: layer.id },
-            requiresGeneration: false,
-          })
-        }
-        setStatus(`已添加${preset.label}`)
-        return
-      }
+      setStatus('正在通过 WebUI 生成新素材…')
       const response = await fetch('/api/assets/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -79,7 +62,7 @@ function App() {
       const payload = (await response.json()) as {
         asset: { url: string; source: 'generated' | 'preset' }
       }
-      addReadyLayer({
+      const layer = addReadyLayer({
         name: command.properties?.name ?? '新元素',
         type: 'image',
         source: payload.asset.source,
@@ -89,6 +72,14 @@ function App() {
         height: 320,
         createdBy: 'voice',
       })
+      if (command.properties?.position) {
+        execute({
+          ...command,
+          action: 'modify',
+          target: { id: layer.id },
+          requiresGeneration: false,
+        })
+      }
       setStatus('新素材已经加入画布')
       return
     }
@@ -155,6 +146,19 @@ function App() {
     }
   }
 
+  const runCommand = async (
+    command: DrawingCommand,
+    confirmed = false,
+  ): Promise<boolean> => {
+    try {
+      await executeCommand(command, confirmed)
+      return true
+    } catch {
+      setStatus('操作失败，作品已保留，请稍后重试。')
+      return false
+    }
+  }
+
   const selectLayer = (id: string) => {
     if (!id) return
     void runCommand({
@@ -209,8 +213,7 @@ function App() {
         return
       }
       const payload = (await response.json()) as { command: DrawingCommand }
-      await runCommand(payload.command)
-      setText('')
+      if (await runCommand(payload.command)) setText('')
     } catch {
       setStatus('指令服务不可用，作品已保留，请稍后重试。')
     }
@@ -339,9 +342,7 @@ function App() {
             <button type="submit">执行</button>
           </form>
           <p className="feedback" aria-live="polite">
-            {lastResult && status.startsWith('准备好了')
-              ? lastResult.message
-              : status}
+            {status}
           </p>
           <p className={`voice-status phase-${speech.status.phase}`}>
             {speech.status.message}

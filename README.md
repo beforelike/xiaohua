@@ -6,7 +6,7 @@
 
 P1 本地可演示闭环已完成：分层画布、文本与语音命令、目标确认、素材生成与降级、项目导入以及 PNG/JSON 导出均可使用。CI 会执行格式检查、lint、类型检查、覆盖率测试、构建和 Chromium 端到端测试。
 
-默认配置使用规则解析与 Mock provider，不需要模型即可运行完整主流程。本地 ASR、OpenAI 兼容指令模型和 Stable Diffusion WebUI 均可通过环境变量启用。
+默认配置使用规则解析并连接本地 Stable Diffusion WebUI。CI 会显式使用 Mock provider；本地 ASR 和 OpenAI 兼容指令模型可通过环境变量启用。
 
 ![笑画分层绘图工作台](docs/assets/workspace.png)
 
@@ -42,7 +42,7 @@ copy .env.example .env
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5173`。默认可直接点击预设素材，或在底部输入“画一个太阳”“把太阳移到右上角”“删除树”“保存作品”等命令。
+打开 `http://127.0.0.1:5173`。Vite 使用固定端口，若该端口被占用会直接提示，避免前端静默切换端口后与 API 的 CORS 配置失配。可直接点击预设素材；在底部输入“画一个太阳”时会通过 API 调用 Stable Diffusion WebUI，再继续执行“把太阳移到右上角”“删除树”“保存作品”等命令。
 
 完整质量门禁：
 

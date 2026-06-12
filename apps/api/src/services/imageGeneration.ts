@@ -18,10 +18,13 @@ export class ImageGenerationError extends Error {
   }
 }
 
-function assetId(request: GenerateAssetRequest) {
+function assetId(
+  request: GenerateAssetRequest,
+  provider: AppConfig['IMAGE_PROVIDER'],
+) {
   return createHash('sha256')
     .update(
-      `${request.commandId}:${request.prompt}:${String(request.width)}x${String(request.height)}:${request.background}`,
+      `${provider}:${request.commandId}:${request.prompt}:${String(request.width)}x${String(request.height)}:${request.background}`,
     )
     .digest('hex')
     .slice(0, 24)
@@ -39,6 +42,7 @@ export function resolveAssetPath(cacheDirectory: string, id: string) {
   return path.join(cacheDirectory, id)
 }
 
+// P1 uses a fast corner-color heuristic; complex edges require a segmentation model.
 export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
   const image = sharp(input).ensureAlpha()
   const { data, info } = await image.raw().toBuffer({ resolveWithObject: true })
@@ -93,7 +97,7 @@ export async function generateAsset(
   config: AppConfig,
   fetcher: typeof fetch = fetch,
 ): Promise<GeneratedAsset> {
-  const id = assetId(request)
+  const id = assetId(request, config.IMAGE_PROVIDER)
   const cacheDirectory = path.resolve(config.ASSET_CACHE_DIR)
   const pngPath = path.join(cacheDirectory, `${id}.png`)
   const svgPath = path.join(cacheDirectory, `${id}.svg`)
