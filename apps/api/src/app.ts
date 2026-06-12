@@ -31,6 +31,10 @@ export function mapError(error: unknown, requestId: string) {
 
 export function createApp(config: AppConfig) {
   const app = express()
+  const rateLimitBuckets = new Map<
+    string,
+    { windowStartedAt: number; count: number }
+  >()
 
   app.disable('x-powered-by')
   const requestId: RequestHandler = (request, response, next) => {
@@ -41,6 +45,40 @@ export function createApp(config: AppConfig) {
   }
   app.use(requestId)
   app.use(cors({ origin: config.WEB_ORIGIN }))
+  app.use((request, response, next) => {
+    const now = Date.now()
+    const key = request.ip ?? request.socket.remoteAddress ?? 'unknown'
+    const current = rateLimitBuckets.get(key)
+    const bucket =
+      !current || now - current.windowStartedAt >= config.RATE_LIMIT_WINDOW_MS
+        ? { windowStartedAt: now, count: 0 }
+        : current
+    bucket.count += 1
+    rateLimitBuckets.set(key, bucket)
+
+    const remaining = Math.max(config.RATE_LIMIT_MAX - bucket.count, 0)
+    response.setHeader('x-ratelimit-limit', config.RATE_LIMIT_MAX)
+    response.setHeader('x-ratelimit-remaining', remaining)
+    if (bucket.count > config.RATE_LIMIT_MAX) {
+      const retryAfterSeconds = Math.max(
+        Math.ceil(
+          (config.RATE_LIMIT_WINDOW_MS - (now - bucket.windowStartedAt)) / 1000,
+        ),
+        1,
+      )
+      response.setHeader('retry-after', retryAfterSeconds)
+      response.status(429).json({
+        error: {
+          code: 'PROVIDER_LIMIT',
+          message: '请求过于频繁，请稍后重试',
+          retryable: true,
+          requestId: response.locals.requestId as string,
+        },
+      })
+      return
+    }
+    next()
+  })
   app.use(express.json({ limit: '1mb' }))
 
   app.get('/api/health', (_request, response) => {

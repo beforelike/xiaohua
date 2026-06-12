@@ -10,13 +10,13 @@ const envSchema = z.object({
   HOST: z.string().default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   WEB_ORIGIN: z.url().default('http://127.0.0.1:5173'),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60_000),
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   COMMAND_PROVIDER: z.enum(['rules', 'llm', 'mock']).default('rules'),
   LLM_BASE_URL: optionalUrl,
   LLM_MODEL: z.string().min(1).optional(),
   LLM_API_KEY: z.string().min(1).optional(),
-  IMAGE_PROVIDER: z
-    .enum(['stable-diffusion-webui', 'mock'])
-    .default('stable-diffusion-webui'),
+  IMAGE_PROVIDER: z.enum(['stable-diffusion-webui', 'mock']).default('mock'),
   SD_WEBUI_BASE_URL: z.url().default('http://127.0.0.1:7860'),
   ASSET_CACHE_DIR: z.string().min(1).default('.cache/assets'),
   ASR_PROVIDER: z.enum(['local', 'mock']).default('mock'),

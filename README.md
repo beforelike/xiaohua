@@ -4,7 +4,11 @@
 
 ## 项目状态
 
-当前仓库已完成 React、TypeScript、Vite 前端工程骨架。P1 范围、验收标准、技术方案、数据模型、接口契约和开发任务已经明确，画布、语音、生成与导出能力仍在后续任务中开发。
+P1 本地可演示闭环已完成：分层画布、文本与语音命令、目标确认、素材生成与降级、项目导入以及 PNG/JSON 导出均可使用。CI 会执行格式检查、lint、类型检查、覆盖率测试、构建和 Chromium 端到端测试。
+
+默认配置使用规则解析与 Mock provider，不需要模型即可运行完整主流程。本地 ASR、OpenAI 兼容指令模型和 Stable Diffusion WebUI 均可通过环境变量启用。
+
+![笑画分层绘图工作台](docs/assets/workspace.png)
 
 ## P1 能力
 
@@ -28,6 +32,29 @@
 
 第三方依赖只负责基础框架、画布渲染、状态管理和测试。项目原创部分包括语音指令协议、上下文目标解析、分层对象模型、命令执行器、生成降级链路及作品导出流程。
 
+## 快速运行
+
+要求 Node.js 22+ 与 npm 10+。
+
+```bash
+npm ci
+copy .env.example .env
+npm run dev
+```
+
+打开 `http://127.0.0.1:5173`。默认可直接点击预设素材，或在底部输入“画一个太阳”“把太阳移到右上角”“删除树”“保存作品”等命令。
+
+完整质量门禁：
+
+```bash
+npm run format:check
+npm run lint
+npm run typecheck
+npm run test:coverage
+npm run build
+npm run test:e2e
+```
+
 ## 文档导航
 
 - [项目准则](docs/constitution.md)
@@ -38,6 +65,7 @@
 - [数据模型](docs/data-model.md)
 - [API 契约](docs/contracts/api-contract.md)
 - [任务拆解](docs/tasks.md)
+- [P1 验收记录](docs/acceptance-report.md)
 - [快速开始](docs/quickstart.md)
 - [贡献指南](CONTRIBUTING.md)
 - [训练营交付工作流](docs/camp-workflow.md)
@@ -48,10 +76,14 @@
 ```text
 .
 ├── apps/
-│   └── web/                 # React + TypeScript + Vite 前端
-├── .github/                 # PR 模板
-├── doc/                     # 原始需求与研发规范
-├── docs/                    # 规范驱动开发文档
+│   ├── api/                 # Express 本地 API 与 provider 适配器
+│   └── web/                 # React + TypeScript + Konva 前端
+├── packages/
+│   └── contracts/           # 共享 Zod Schema 与类型
+├── e2e/                     # Playwright 演示流程
+├── .github/                 # CI、PR 模板
+├── doc/                     # 训练营提供的原始需求与研发规范
+├── docs/                    # 本项目整理的规格、方案与验收文档
 │   └── contracts/           # 接口契约
 ├── package.json             # npm workspace 与根命令
 ├── CONTRIBUTING.md
@@ -59,20 +91,14 @@
 └── README.md
 ```
 
-## 里程碑
-
-1. 完成规范、方案和任务评审。
-2. 建立可运行的前端骨架和质量门禁。
-3. 实现画布与图层领域模型。
-4. 接入语音、指令解析和元素生成。
-5. 完成导出、端到端测试、部署与演示。
-
 ## 安全与成本
 
 - 默认运行链路不依赖境外云服务，保证中国大陆本地环境可用。
 - Stable Diffusion WebUI 只监听本机或可信局域网，不直接暴露到公网。
 - 图片生成限制分辨率、超时和重试次数，并优先命中预设素材或缓存。
 - 所有模型输出在执行前必须通过结构校验和动作白名单。
+- API 默认按客户端地址限流，跨域来源仅允许配置的 Web 地址。
+- 音频仅转发给配置的本地 ASR 服务，不在应用中持久化。
 
 ## 许可证
 

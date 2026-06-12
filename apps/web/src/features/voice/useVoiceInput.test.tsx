@@ -113,4 +113,32 @@ describe('useVoiceInput', () => {
       recoverable: true,
     })
   })
+
+  it('reports microphone permission failures without leaving listening state', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockRejectedValue(new Error('NotAllowedError')),
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          jsonResponse({ provider: 'local', available: true }),
+        ),
+    )
+
+    const { result } = renderHook(() => useVoiceInput(vi.fn()))
+    await waitFor(() => expect(result.current.mode).toBe('local'))
+    await act(async () => result.current.toggle())
+
+    expect(result.current.listening).toBe(false)
+    expect(result.current.status).toMatchObject({
+      phase: 'error',
+      message: '无法使用麦克风，请检查浏览器权限。',
+      recoverable: true,
+    })
+  })
 })

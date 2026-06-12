@@ -55,6 +55,29 @@ describe('API application', () => {
     expect(JSON.stringify(body)).not.toContain('SyntaxError')
   })
 
+  it('rate limits clients with a structured retryable error', async () => {
+    const app = createApp({ ...config, RATE_LIMIT_MAX: 1 })
+    await request(app).get('/api/health').expect(200)
+    const response = await request(app)
+      .get('/api/health')
+      .set('x-request-id', 'limited-request')
+      .set('origin', config.WEB_ORIGIN)
+    const body = apiErrorSchema.parse(response.body)
+
+    expect(response.status).toBe(429)
+    expect(response.headers['retry-after']).toBe('60')
+    expect(response.headers['x-ratelimit-remaining']).toBe('0')
+    expect(response.headers['access-control-allow-origin']).toBe(
+      config.WEB_ORIGIN,
+    )
+    expect(body.error).toEqual({
+      code: 'PROVIDER_LIMIT',
+      message: '请求过于频繁，请稍后重试',
+      retryable: true,
+      requestId: 'limited-request',
+    })
+  })
+
   it('maps validation and internal errors without leaking details', () => {
     const validation = z.string().safeParse(42)
     expect(validation.success).toBe(false)

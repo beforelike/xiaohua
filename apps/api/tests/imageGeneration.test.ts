@@ -22,6 +22,8 @@ async function createConfig(
     HOST: '127.0.0.1',
     PORT: 8787,
     WEB_ORIGIN: 'http://127.0.0.1:5173',
+    RATE_LIMIT_WINDOW_MS: 60_000,
+    RATE_LIMIT_MAX: 120,
     COMMAND_PROVIDER: 'rules',
     IMAGE_PROVIDER: imageProvider,
     SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',

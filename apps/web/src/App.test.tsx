@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -208,6 +209,43 @@ describe('App', () => {
       screen.getByRole('button', { name: '停止语音输入' }),
     ).toBeInTheDocument()
     delete window.SpeechRecognition
+  })
+
+  it('keeps the project usable when the command service is slow or unavailable', async () => {
+    let rejectCommand!: (reason?: unknown) => void
+    const pendingCommand = new Promise<Response>((_resolve, reject) => {
+      rejectCommand = reject
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url
+        if (url === '/api/asr/health') {
+          return jsonResponse({ provider: 'mock', available: false })
+        }
+        if (url === '/api/commands/parse') return pendingCommand
+        throw new Error(`Unexpected fetch request: ${url}`)
+      }),
+    )
+    render(<App />)
+
+    const input =
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角')
+    fireEvent.change(input, { target: { value: '画一个太阳' } })
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    expect(await screen.findByText('正在理解指令…')).toBeInTheDocument()
+    await act(async () => rejectCommand(new Error('network unavailable')))
+    expect(
+      await screen.findByText('指令服务不可用，作品已保留，请稍后重试。'),
+    ).toBeInTheDocument()
+    expect(input).toHaveValue('画一个太阳')
+    expect(useProjectStore.getState().project.layers).toHaveLength(0)
   })
 
   it('requires confirmation before executing a low-confidence command', async () => {

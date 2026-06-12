@@ -186,26 +186,34 @@ function App() {
     event.preventDefault()
     const transcript = text.trim()
     if (!transcript) return
-    const response = await fetch('/api/commands/parse', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        schemaVersion: 1,
-        text: transcript,
-        context: {
-          selectedLayerId: project.selectedLayerId,
-          recentLayers: project.recentLayerIds
-            .map((id) => project.layers.find((layer) => layer.id === id))
-            .filter((layer): layer is Layer => Boolean(layer))
-            .map(({ id, name, type }) => ({ id, name, type })),
-          globalStyle: project.globalStyle,
-        },
-      }),
-    })
-    if (!response.ok) return
-    const payload = (await response.json()) as { command: DrawingCommand }
-    await runCommand(payload.command)
-    setText('')
+    setStatus('正在理解指令…')
+    try {
+      const response = await fetch('/api/commands/parse', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          text: transcript,
+          context: {
+            selectedLayerId: project.selectedLayerId,
+            recentLayers: project.recentLayerIds
+              .map((id) => project.layers.find((layer) => layer.id === id))
+              .filter((layer): layer is Layer => Boolean(layer))
+              .map(({ id, name, type }) => ({ id, name, type })),
+            globalStyle: project.globalStyle,
+          },
+        }),
+      })
+      if (!response.ok) {
+        setStatus('暂时无法理解这条指令，请稍后重试。')
+        return
+      }
+      const payload = (await response.json()) as { command: DrawingCommand }
+      await runCommand(payload.command)
+      setText('')
+    } catch {
+      setStatus('指令服务不可用，作品已保留，请稍后重试。')
+    }
   }
 
   const importProject = async (event: ChangeEvent<HTMLInputElement>) => {

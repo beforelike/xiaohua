@@ -1,11 +1,11 @@
 # 快速开始
 
-当前仓库尚未生成应用代码。完成任务 T101-T105 后，开发与验证流程应保持如下统一接口。
+仓库已提供可直接运行的 P1 应用。默认 Mock 配置不要求安装本地模型，适合开发、评审和 CI；真实模型服务按需启用。
 
 ## 环境要求
 
-- Node.js 当前维护中的 LTS 版本
-- npm
+- Node.js 22+
+- npm 10+
 - 最新版 Chrome 或 Edge
 - 本地 Stable Diffusion WebUI，启动时开启 `--api`
 - 本地 ASR 服务；未启动时使用文本 Mock
@@ -16,21 +16,30 @@
 ASR_PROVIDER=mock
 ASR_BASE_URL=http://127.0.0.1:9000
 COMMAND_PROVIDER=rules
-IMAGE_PROVIDER=stable-diffusion-webui
+IMAGE_PROVIDER=mock
 SD_WEBUI_BASE_URL=http://127.0.0.1:7860
 ASSET_CACHE_DIR=.cache/assets
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX=120
 ```
 
-变量名可在实现时细化，但必须同步更新 `.env.example`。本地服务地址不得硬编码在业务代码中。
+复制 `.env.example` 为 `.env` 后按需修改。本地服务地址不得写入业务请求或由客户端传入。
 
-## 预期命令
+## 启动命令
 
 ```bash
-npm install
+npm ci
 npm run dev
+```
+
+访问 `http://127.0.0.1:5173`。需要真实图片生成时，将 `IMAGE_PROVIDER` 改为 `stable-diffusion-webui`；需要本地语音识别时，将 `ASR_PROVIDER` 改为 `local`。
+
+## 质量命令
+
+```bash
 npm run lint
 npm run typecheck
-npm run test
+npm run test:coverage
 npm run build
 npm run test:e2e
 ```
