@@ -16,7 +16,7 @@ export const layerSchema = z.object({
   name: z.string().trim().min(1).max(80),
   type: layerTypeSchema,
   assetUrl: z.string().min(1).optional(),
-  prompt: z.string().max(1000).optional(),
+  prompt: z.string().max(2000).optional(),
   source: z.enum(['generated', 'preset', 'user']),
   status: assetStatusSchema,
   x: z.number(),
@@ -79,6 +79,35 @@ export const commandActionSchema = z.enum([
   'cancel',
 ])
 
+export const sceneObjectSchema = z.object({
+  /** 对象名称，如"马"、"草原" */
+  name: z.string().trim().min(1).max(80),
+  /** LLM增强后的英文正向提示词 */
+  prompt: z.string().max(2000),
+  /** LLM生成的英文负向提示词 */
+  negativePrompt: z.string().max(2000).optional(),
+  /** 背景类型：前景对象用transparent，背景/场景用opaque */
+  background: z.enum(['transparent', 'opaque']),
+  /** 是否为场景背景层 */
+  isBackground: z.boolean().default(false),
+  /** 对象在画布中的建议位置，由客户端换算为实际坐标 */
+  position: z
+    .enum([
+      'top-left',
+      'top',
+      'top-right',
+      'left',
+      'center',
+      'right',
+      'bottom-left',
+      'bottom',
+      'bottom-right',
+    ])
+    .default('center'),
+  /** 对象相对画布的建议尺寸 */
+  size: z.enum(['small', 'medium', 'large', 'full']).default('medium'),
+})
+
 export const drawingCommandSchema = z.object({
   schemaVersion: z.literal(schemaVersion),
   id: z.string().min(1),
@@ -94,7 +123,11 @@ export const drawingCommandSchema = z.object({
     })
     .optional(),
   objectType: layerTypeSchema.optional(),
-  prompt: z.string().max(1000).optional(),
+  prompt: z.string().max(2000).optional(),
+  /** LLM 根据用户语义和项目上下文确定的统一英文画风描述 */
+  style: z.string().max(500).optional(),
+  /** 当action为create时，LLM可返回多个分离的对象 */
+  objects: z.array(sceneObjectSchema).max(10).optional(),
   properties: z
     .object({
       position: z.string().max(80).optional(),
@@ -125,6 +158,11 @@ export const parseCommandRequestSchema = z.object({
           id: z.string().min(1),
           name: z.string().min(1),
           type: layerTypeSchema,
+          prompt: z.string().max(2000).optional(),
+          x: z.number().optional(),
+          y: z.number().optional(),
+          width: z.number().positive().optional(),
+          height: z.number().positive().optional(),
         }),
       )
       .max(20),
@@ -135,10 +173,16 @@ export const parseCommandRequestSchema = z.object({
 export const generateAssetRequestSchema = z.object({
   schemaVersion: z.literal(schemaVersion),
   commandId: z.string().min(1),
-  prompt: z.string().trim().min(1).max(1000),
+  prompt: z.string().trim().min(1).max(2000),
+  /** 可选的负向提示词，由LLM生成 */
+  negativePrompt: z.string().max(2000).optional(),
+  /** 可选的画风提示词 */
+  style: z.string().max(500).optional(),
   width: z.number().int().min(256).max(1024),
   height: z.number().int().min(256).max(1024),
   background: z.enum(['transparent', 'opaque']),
+  /** 是否使用LLM增强提示词（当prompt已经是LLM增强后的则为false） */
+  enhancedPrompt: z.boolean().optional(),
 })
 
 export const generatedAssetSchema = z.object({
@@ -195,6 +239,7 @@ export const appStatusSchema = z.object({
 export type CanvasSettings = z.infer<typeof canvasSettingsSchema>
 export type Layer = z.infer<typeof layerSchema>
 export type Project = z.infer<typeof projectSchema>
+export type SceneObject = z.infer<typeof sceneObjectSchema>
 export type DrawingCommand = z.infer<typeof drawingCommandSchema>
 export type ParseCommandRequest = z.infer<typeof parseCommandRequestSchema>
 export type GenerateAssetRequest = z.infer<typeof generateAssetRequestSchema>

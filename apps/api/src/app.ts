@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express'
-import { ZodError } from 'zod'
+import { ZodError, z } from 'zod'
 import {
   generateAssetRequestSchema,
   parseCommandRequestSchema,
@@ -12,6 +12,10 @@ import {
 import type { AppConfig } from './config'
 import { generateAsset, readAsset } from './services/imageGeneration'
 import { parseLlmCommand } from './services/llmCommandParser'
+import {
+  enhancePrompt,
+  enhanceSinglePrompt,
+} from './services/llmPromptEnhancer'
 import { parseRuleCommand } from './services/ruleCommandParser'
 import { checkAsrHealth, transcribeAudio } from './services/asrProvider'
 
@@ -178,11 +182,49 @@ export function createApp(config: AppConfig) {
     try {
       const input = parseCommandRequestSchema.parse(request.body)
       const ruleCommand = parseRuleCommand(input)
-      const command =
+      let command =
         ruleCommand ??
         (config.COMMAND_PROVIDER === 'llm'
           ? await parseLlmCommand(input, config)
           : null)
+
+      // 所有创建命令都统一经过 LLM 增强，避免预设对象绕过对象分离。
+      if (
+        command &&
+        command.action === 'create' &&
+        !command.objects &&
+        config.LLM_ENHANCE_PROMPT &&
+        config.LLM_BASE_URL &&
+        config.LLM_MODEL &&
+        config.LLM_API_KEY
+      ) {
+        try {
+          const enhanced = await enhancePrompt(
+            command.prompt ?? input.text,
+            input.context.globalStyle,
+            input.context,
+            config,
+          )
+          if (enhanced.objects.length > 0) {
+            command = {
+              ...command,
+              style: enhanced.style,
+              objects: enhanced.objects,
+            }
+          }
+        } catch {
+          response.status(502).json({
+            error: {
+              code: 'GENERATION_FAILED',
+              message: '提示词增强失败，请检查本地 LLM 后重试',
+              retryable: true,
+              requestId: response.locals.requestId as string,
+            },
+          })
+          return
+        }
+      }
+
       if (!command) {
         response.status(422).json({
           error: {
@@ -204,6 +246,81 @@ export function createApp(config: AppConfig) {
     try {
       const input = generateAssetRequestSchema.parse(request.body)
       response.json({ asset: await generateAsset(input, config) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // 提示词增强端点：单独用于重新生成场景
+  app.post('/api/prompts/enhance', async (request, response, next) => {
+    try {
+      const body = z
+        .object({
+          prompt: z.string().min(1).max(500),
+          globalStyle: z.string().max(500).default(''),
+        })
+        .parse(request.body)
+
+      if (!config.LLM_BASE_URL || !config.LLM_MODEL || !config.LLM_API_KEY) {
+        response.status(503).json({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'LLM 未配置，无法增强提示词',
+            retryable: false,
+            requestId: response.locals.requestId as string,
+          },
+        })
+        return
+      }
+
+      const result = await enhancePrompt(
+        body.prompt,
+        body.globalStyle,
+        {
+          selectedLayerId: null,
+          recentLayers: [],
+          globalStyle: body.globalStyle,
+        },
+        config,
+      )
+      response.json(result)
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // 单对象提示词增强端点
+  app.post('/api/prompts/enhance-single', async (request, response, next) => {
+    try {
+      const body = z
+        .object({
+          objectName: z.string().min(1).max(80),
+          prompt: z.string().min(1).max(500),
+          background: z.enum(['transparent', 'opaque']),
+          globalStyle: z.string().max(500).default(''),
+        })
+        .parse(request.body)
+
+      if (!config.LLM_BASE_URL || !config.LLM_MODEL || !config.LLM_API_KEY) {
+        response.status(503).json({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'LLM 未配置，无法增强提示词',
+            retryable: false,
+            requestId: response.locals.requestId as string,
+          },
+        })
+        return
+      }
+
+      const result = await enhanceSinglePrompt(
+        body.objectName,
+        body.prompt,
+        body.background,
+        body.globalStyle,
+        config,
+      )
+      response.json(result)
     } catch (error) {
       next(error)
     }

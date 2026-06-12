@@ -33,7 +33,7 @@ export function createProject(
     id: factory.id(),
     title,
     canvas: DEFAULT_CANVAS,
-    globalStyle: '柔和童话手绘插画',
+    globalStyle: '',
     layers: [],
     selectedLayerId: null,
     recentLayerIds: [],

@@ -1,9 +1,10 @@
+import path from 'node:path'
 import request from 'supertest'
-import { describe, expect, it } from 'vitest'
-import { apiErrorSchema } from '@xiaohua/contracts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { apiErrorSchema, drawingCommandSchema } from '@xiaohua/contracts'
 import { z } from 'zod'
 import { createApp, createRateLimitBuckets, mapError } from '../src/app'
-import { getConfig } from '../src/config'
+import { getConfig, rootEnvPath } from '../src/config'
 
 const config = getConfig({
   HOST: '127.0.0.1',
@@ -12,6 +13,10 @@ const config = getConfig({
   COMMAND_PROVIDER: 'mock',
   IMAGE_PROVIDER: 'mock',
   ASR_PROVIDER: 'mock',
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('API application', () => {
@@ -23,6 +28,12 @@ describe('API application', () => {
       'http://127.0.0.1:5173',
       'http://127.0.0.1:5174',
     ])
+  })
+
+  it('loads the repository root environment independently of process cwd', () => {
+    expect(rootEnvPath).toBe(
+      path.resolve(import.meta.dirname, '../../..', '.env'),
+    )
   })
 
   it('returns provider-safe health information', async () => {
@@ -133,5 +144,75 @@ describe('API application', () => {
         },
       },
     })
+  })
+
+  it('enhances rule-matched create commands instead of bypassing the LLM', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  style:
+                    'soft hand-painted storybook illustration, warm colors',
+                  objects: [
+                    {
+                      name: '太阳',
+                      prompt: 'warm hand-painted sun',
+                      negativePrompt: 'text, watermark',
+                      background: 'transparent',
+                      isBackground: false,
+                      position: 'top-right',
+                      size: 'small',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetcher)
+    const llmConfig = getConfig({
+      HOST: '127.0.0.1',
+      PORT: '8787',
+      WEB_ORIGIN: 'http://127.0.0.1:5173',
+      COMMAND_PROVIDER: 'rules',
+      LLM_BASE_URL: 'http://127.0.0.1:11434/v1',
+      LLM_MODEL: 'local-model',
+      LLM_API_KEY: 'test',
+      LLM_ENHANCE_PROMPT: 'true',
+      IMAGE_PROVIDER: 'mock',
+      ASR_PROVIDER: 'mock',
+    })
+
+    const response = await request(createApp(llmConfig))
+      .post('/api/commands/parse')
+      .send({
+        schemaVersion: 1,
+        text: '画一个太阳',
+        context: {
+          selectedLayerId: null,
+          recentLayers: [],
+          globalStyle: 'storybook',
+        },
+      })
+
+    expect(response.status).toBe(200)
+    expect(fetcher).toHaveBeenCalledOnce()
+    const body = z
+      .object({ command: drawingCommandSchema })
+      .parse(response.body)
+    expect(body.command.objects).toEqual([
+      expect.objectContaining({
+        name: '太阳',
+        prompt: 'warm hand-painted sun',
+        position: 'top-right',
+      }),
+    ])
+    expect(body.command.style).toContain('storybook')
   })
 })

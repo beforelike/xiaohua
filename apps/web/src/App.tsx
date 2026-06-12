@@ -1,5 +1,10 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import type { DrawingCommand, Layer } from '@xiaohua/contracts'
+import type {
+  DrawingCommand,
+  Layer,
+  Project,
+  SceneObject,
+} from '@xiaohua/contracts'
 import './App.css'
 import {
   LayerCanvas,
@@ -15,6 +20,72 @@ import {
 import { resolveTarget } from './features/commands/resolveTarget'
 import { useVoiceInput } from './features/voice/useVoiceInput'
 import { useProjectStore } from './stores/projectStore'
+
+async function readApiError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const payload = (await response.json()) as {
+      error?: { message?: string }
+    }
+    return payload.error?.message?.trim() || fallback
+  } catch {
+    return fallback
+  }
+}
+
+function sceneObjectLayout(
+  object: SceneObject,
+  project: Project,
+): Pick<Layer, 'x' | 'y' | 'width' | 'height'> {
+  if (object.isBackground || object.size === 'full') {
+    return {
+      x: 0,
+      y: 0,
+      width: project.canvas.width,
+      height: project.canvas.height,
+    }
+  }
+
+  const sizeRatio = { small: 0.2, medium: 0.32, large: 0.48 }[object.size]
+  const width = Math.round(project.canvas.width * sizeRatio)
+  const height = width
+  const margin = 48
+  const positions = {
+    'top-left': { x: margin, y: margin },
+    top: { x: (project.canvas.width - width) / 2, y: margin },
+    'top-right': {
+      x: project.canvas.width - width - margin,
+      y: margin,
+    },
+    left: {
+      x: margin,
+      y: (project.canvas.height - height) / 2,
+    },
+    center: {
+      x: (project.canvas.width - width) / 2,
+      y: (project.canvas.height - height) / 2,
+    },
+    right: {
+      x: project.canvas.width - width - margin,
+      y: (project.canvas.height - height) / 2,
+    },
+    'bottom-left': {
+      x: margin,
+      y: project.canvas.height - height - margin,
+    },
+    bottom: {
+      x: (project.canvas.width - width) / 2,
+      y: project.canvas.height - height - margin,
+    },
+    'bottom-right': {
+      x: project.canvas.width - width - margin,
+      y: project.canvas.height - height - margin,
+    },
+  } as const
+  return { ...positions[object.position], width, height }
+}
 
 function App() {
   const project = useProjectStore((state) => state.project)
@@ -42,6 +113,72 @@ function App() {
       return
     }
     if (command.action === 'create') {
+      // 多对象创建流程：当 LLM 返回了 objects 数组时，逐个生成并创建图层
+      if (command.objects && command.objects.length > 0) {
+        setStatus(`正在生成 ${String(command.objects.length)} 个对象…`)
+        const generated: Array<{
+          object: SceneObject
+          asset: { url: string; source: 'generated' | 'preset' }
+        }> = []
+        for (const obj of command.objects as SceneObject[]) {
+          try {
+            const response = await fetch('/api/assets/generate', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                schemaVersion: 1,
+                commandId: `${command.id}-${obj.name}`,
+                prompt: obj.prompt,
+                negativePrompt: obj.negativePrompt,
+                style: command.style,
+                width: 512,
+                height: 512,
+                background: obj.background,
+                enhancedPrompt: true,
+              }),
+            })
+            if (!response.ok) {
+              setStatus(`生成“${obj.name}”失败，作品未修改。`)
+              return
+            }
+            const payload = (await response.json()) as {
+              asset: { url: string; source: 'generated' | 'preset' }
+            }
+            generated.push({ object: obj, asset: payload.asset })
+          } catch {
+            setStatus(`生成“${obj.name}”时出错，作品未修改。`)
+            return
+          }
+        }
+        const results = generated.map(({ object, asset }) => {
+          const layout = sceneObjectLayout(object, project)
+          return addReadyLayer({
+            name: object.name,
+            type: 'image',
+            source: asset.source,
+            assetUrl: asset.url,
+            prompt: object.prompt,
+            ...layout,
+            createdBy: 'voice',
+          })
+        })
+        if (command.style && command.style !== project.globalStyle) {
+          useProjectStore.getState().replaceProject({
+            ...useProjectStore.getState().project,
+            globalStyle: command.style,
+            updatedAt: new Date().toISOString(),
+          })
+        }
+        setStatus(
+          `已生成 ${String(results.length)} 个图层：${results.map((layer) => layer.name).join('、')}`,
+        )
+        if (results.length === 0) {
+          setStatus('没有可生成的对象，请换一种描述。')
+        }
+        return
+      }
+
+      // 单对象创建流程（回退）
       setStatus('正在通过 WebUI 生成新素材…')
       const response = await fetch('/api/assets/generate', {
         method: 'POST',
@@ -50,13 +187,14 @@ function App() {
           schemaVersion: 1,
           commandId: command.id,
           prompt: command.prompt ?? command.properties?.name ?? '童话元素',
+          style: command.style,
           width: 512,
           height: 512,
           background: 'transparent',
         }),
       })
       if (!response.ok) {
-        setStatus('素材生成失败，请稍后重试。')
+        setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
         return
       }
       const payload = (await response.json()) as {
@@ -106,13 +244,14 @@ function App() {
           schemaVersion: 1,
           commandId: command.id,
           prompt: command.prompt ?? target.prompt ?? target.name,
+          style: command.style ?? project.globalStyle,
           width: 512,
           height: 512,
           background: 'transparent',
         }),
       })
       if (!response.ok) {
-        setStatus('重新生成失败，已保留原素材。')
+        setStatus(await readApiError(response, '重新生成失败，已保留原素材。'))
         return
       }
       const payload = (await response.json()) as {
@@ -203,13 +342,24 @@ function App() {
             recentLayers: project.recentLayerIds
               .map((id) => project.layers.find((layer) => layer.id === id))
               .filter((layer): layer is Layer => Boolean(layer))
-              .map(({ id, name, type }) => ({ id, name, type })),
+              .map(({ id, name, type, prompt, x, y, width, height }) => ({
+                id,
+                name,
+                type,
+                prompt,
+                x,
+                y,
+                width,
+                height,
+              })),
             globalStyle: project.globalStyle,
           },
         }),
       })
       if (!response.ok) {
-        setStatus('暂时无法理解这条指令，请稍后重试。')
+        setStatus(
+          await readApiError(response, '暂时无法理解这条指令，请稍后重试。'),
+        )
         return
       }
       const payload = (await response.json()) as { command: DrawingCommand }

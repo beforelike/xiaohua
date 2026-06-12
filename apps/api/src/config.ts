@@ -1,8 +1,12 @@
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { config as loadDotEnv } from 'dotenv'
 import { z } from 'zod'
 
-loadDotEnv({ path: path.resolve(process.cwd(), '.env'), quiet: true })
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
+export const rootEnvPath = path.resolve(moduleDirectory, '../../..', '.env')
+
+loadDotEnv({ path: rootEnvPath, quiet: true })
 
 const optionalUrl = z.url().optional()
 const webOrigins = z.string().superRefine((value, context) => {
@@ -39,10 +43,25 @@ const envSchema = z.object({
   LLM_BASE_URL: optionalUrl,
   LLM_MODEL: z.string().min(1).optional(),
   LLM_API_KEY: z.string().min(1).optional(),
+  /** 是否在生图前使用LLM增强提示词 */
+  LLM_ENHANCE_PROMPT: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   IMAGE_PROVIDER: z
     .enum(['stable-diffusion-webui', 'mock'])
     .default('stable-diffusion-webui'),
   SD_WEBUI_BASE_URL: z.url().default('http://127.0.0.1:7860'),
+  SD_STEPS: z.coerce.number().int().min(1).max(150).default(28),
+  SD_CFG_SCALE: z.coerce.number().min(1).max(30).default(7),
+  SD_SAMPLER: z.string().min(1).default('DPM++ 2M Karras'),
+  SD_DENOISING_STRENGTH: z.coerce.number().min(0).max(1).default(0.7),
+  /** 全局画风提示词，会添加到每次生图的prompt前面 */
+  SD_STYLE_PROMPT: z
+    .string()
+    .default(
+      'digital illustration, clean lineart, vibrant colors, anime style, high quality, detailed',
+    ),
   ASSET_CACHE_DIR: z.string().min(1).default('.cache/assets'),
   STATIC_DIR: z.string().default(''),
   ASR_PROVIDER: z.enum(['local', 'mock']).default('mock'),

@@ -75,6 +75,19 @@ describe('drawingCommandSchema', () => {
 
     expect(result.success).toBe(false)
   })
+
+  it('accepts an LLM-selected scene style', () => {
+    const command = drawingCommandSchema.parse({
+      schemaVersion: 1,
+      id: 'cmd-style',
+      action: 'create',
+      style: 'photorealistic wildlife photography',
+      requiresGeneration: true,
+      confidence: 0.95,
+    })
+
+    expect(command.style).toContain('photorealistic')
+  })
 })
 
 describe('parseCommandRequestSchema', () => {

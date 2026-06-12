@@ -7,6 +7,7 @@ test-results/
 .env.*
 !.env.example
 .cache/
+apps/web/.vite/
 *.log
 .DS_Store
 Thumbs.db
