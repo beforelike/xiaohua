@@ -12,10 +12,10 @@
 ## 阶段 1：工程骨架
 
 - [x] T101 初始化 React、TypeScript、Vite 工程。
-- [ ] T102 建立 Node.js API 应用和共享 contracts 包。
-- [ ] T103 配置 ESLint、Prettier、Vitest、Playwright 和严格类型检查。
+- [x] T102 建立 Node.js API 应用和共享 contracts 包。
+- [x] T103 配置 ESLint、Prettier、Vitest、Playwright 和严格类型检查。
 - [ ] T104 配置 GitHub Actions，执行 lint、typecheck、test、build。
-- [ ] T105 提供 `.env.example` 和 Mock provider，禁止真实密钥入库。
+- [x] T105 提供 `.env.example` 和 Mock provider，禁止真实密钥入库。
 
 ## 阶段 2：画布与图层
 

@@ -7,10 +7,22 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @xiaohua/web",
-    "lint": "npm run lint --workspace @xiaohua/web",
-    "typecheck": "npm run typecheck --workspace @xiaohua/web",
-    "build": "npm run build --workspace @xiaohua/web"
+    "dev": "concurrently -n web,api -c cyan,yellow \"npm run dev --workspace @xiaohua/web\" \"npm run dev --workspace @xiaohua/api\"",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=22.0.0",
