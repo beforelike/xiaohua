@@ -1,11 +1,13 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import sharp from 'sharp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppConfig } from '../src/config'
 import {
   generateAsset,
   readAsset,
+  removeSolidBackground,
   resolveAssetPath,
 } from '../src/services/imageGeneration'
 
@@ -48,7 +50,16 @@ afterEach(async () => {
 describe('imageGeneration', () => {
   it('stores and serves a generated PNG', async () => {
     const config = await createConfig()
-    const png = Buffer.from('png-data')
+    const png = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ images: [png.toString('base64')] }), {
         status: 200,
@@ -60,21 +71,29 @@ describe('imageGeneration', () => {
     const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
 
     expect(asset.source).toBe('generated')
+    expect(asset.backgroundRemoved).toBe(true)
     expect(stored?.mimeType).toBe('image/png')
-    expect(stored?.body).toEqual(png)
+    expect((await sharp(stored?.body).metadata()).hasAlpha).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
   it('reuses the idempotent cache', async () => {
     const config = await createConfig()
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({ images: [Buffer.from('png').toString('base64')] }),
-          { status: 200 },
-        ),
-      )
+    const png = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+        status: 200,
+      }),
+    )
 
     await generateAsset(request, config, fetcher)
     await generateAsset(request, config, fetcher)
@@ -106,5 +125,44 @@ describe('imageGeneration', () => {
     await expect(
       readFile(path.join(config.ASSET_CACHE_DIR, 'secret')),
     ).rejects.toThrow()
+  })
+
+  it('removes a solid corner background while preserving the subject', async () => {
+    const input = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: 4,
+              height: 4,
+              channels: 3,
+              background: '#c05040',
+            },
+          })
+            .png()
+            .toBuffer(),
+          left: 2,
+          top: 2,
+        },
+      ])
+      .png()
+      .toBuffer()
+
+    const output = await removeSolidBackground(input)
+    const { data, info } = await sharp(output)
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const alphaAt = (x: number, y: number) =>
+      data[(y * info.width + x) * info.channels + 3]
+
+    expect(alphaAt(0, 0)).toBe(0)
+    expect(alphaAt(3, 3)).toBe(255)
   })
 })

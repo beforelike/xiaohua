@@ -316,6 +316,47 @@
   font-size: 11px;
 }
 
+.confirmation {
+  margin-top: 12px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-left: 3px solid var(--terracotta);
+  background: rgba(185, 87, 62, 0.08);
+}
+
+.confirmation strong {
+  font-family: var(--display-font);
+  font-weight: 500;
+}
+
+.confirmation p {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.confirmation button {
+  padding: 8px 11px;
+  border: 1px solid var(--terracotta);
+  background: #fffdf7;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.confirmation button small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.confirmation .cancel-confirm {
+  border-color: var(--line);
+  background: transparent;
+}
+
 .layer-list {
   padding: 8px;
 }

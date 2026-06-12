@@ -87,6 +87,17 @@ export function parseRuleCommand(
   }
 
   const position = positionFromText(text)
+  if (/(重新生成|重新画|换成|换一个|改成.*风格|更.*风格)/.test(text)) {
+    return drawingCommandSchema.parse({
+      ...base,
+      action: 'modify',
+      target,
+      prompt: request.text,
+      requiresGeneration: true,
+      confidence: 0.94,
+    })
+  }
+
   if (/(画|添加|加上|加一个|创建)/.test(text)) {
     const name = objectNames.find((candidate) => text.includes(candidate))
     return drawingCommandSchema.parse({

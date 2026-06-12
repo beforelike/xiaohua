@@ -49,4 +49,45 @@ describe('projectStore', () => {
     expect(store.getState().project).toBe(before)
     expect(store.getState().lastResult).toBe(result)
   })
+
+  it('replaces only the generated asset fields', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => 'tree', now: () => second },
+    )
+    store.getState().addReadyLayer({
+      name: '树',
+      type: 'preset',
+      source: 'preset',
+      assetUrl: 'old.svg',
+      width: 220,
+      height: 320,
+      x: 12,
+      y: 24,
+      rotation: 8,
+      createdBy: 'voice',
+    })
+    const before = store.getState().project.layers[0]!
+
+    expect(
+      store.getState().replaceLayerAsset('tree', {
+        assetUrl: '/api/assets/new',
+        source: 'generated',
+        prompt: '梦幻的树',
+      }),
+    ).toBe(true)
+
+    expect(store.getState().project.layers[0]).toMatchObject({
+      id: before.id,
+      x: before.x,
+      y: before.y,
+      width: before.width,
+      height: before.height,
+      rotation: before.rotation,
+      zIndex: before.zIndex,
+      assetUrl: '/api/assets/new',
+      source: 'generated',
+      prompt: '梦幻的树',
+    })
+  })
 })

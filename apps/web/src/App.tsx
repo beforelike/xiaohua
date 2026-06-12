@@ -12,12 +12,14 @@ import {
   downloadProject,
   parseProject,
 } from './features/project/downloads'
+import { resolveTarget } from './features/commands/resolveTarget'
 import { useSpeechRecognition } from './features/voice/useSpeechRecognition'
 import { useProjectStore } from './stores/projectStore'
 
 function App() {
   const project = useProjectStore((state) => state.project)
   const addReadyLayer = useProjectStore((state) => state.addReadyLayer)
+  const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
   const execute = useProjectStore((state) => state.execute)
   const lastResult = useProjectStore((state) => state.lastResult)
   const [text, setText] = useState('')
@@ -26,8 +28,20 @@ function App() {
   )
   const canvasRef = useRef<LayerCanvasHandle>(null)
   const importRef = useRef<HTMLInputElement>(null)
+  const [pending, setPending] = useState<{
+    command: DrawingCommand
+    candidates?: Layer[]
+  } | null>(null)
 
-  const runCommand = async (command: DrawingCommand) => {
+  const runCommand = async (
+    command: DrawingCommand,
+    confirmed = false,
+  ): Promise<void> => {
+    if (!confirmed && command.confidence < 0.75) {
+      setPending({ command })
+      setStatus('这条指令的理解置信度较低，请确认后执行。')
+      return
+    }
     if (command.action === 'create') {
       setStatus('正在准备新素材…')
       const preset = presets.find(
@@ -78,6 +92,49 @@ function App() {
       setStatus('新素材已经加入画布')
       return
     }
+    if (command.action === 'modify' && command.requiresGeneration) {
+      const resolution = resolveTarget(project, command.target)
+      if (!resolution.ok) {
+        setStatus(resolution.message)
+        if (resolution.code === 'AMBIGUOUS_TARGET') {
+          setPending({
+            command,
+            ...(resolution.candidates
+              ? { candidates: resolution.candidates }
+              : {}),
+          })
+        }
+        return
+      }
+      const target = resolution.layer
+      setStatus(`正在重新生成${target.name}，旧素材会保留到成功为止…`)
+      const response = await fetch('/api/assets/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          commandId: command.id,
+          prompt: command.prompt ?? target.prompt ?? target.name,
+          width: 512,
+          height: 512,
+          background: 'transparent',
+        }),
+      })
+      if (!response.ok) {
+        setStatus('重新生成失败，已保留原素材。')
+        return
+      }
+      const payload = (await response.json()) as {
+        asset: { url: string; source: 'generated' | 'preset' }
+      }
+      replaceLayerAsset(target.id, {
+        assetUrl: payload.asset.url,
+        source: payload.asset.source,
+        prompt: command.prompt ?? target.prompt,
+      })
+      setStatus(`已重新生成${target.name}`)
+      return
+    }
     if (command.action === 'save') {
       downloadProject(project)
       const dataUrl = canvasRef.current?.toDataUrl()
@@ -90,6 +147,12 @@ function App() {
     }
     const result = execute(command)
     setStatus(result.message)
+    if (!result.ok && result.code === 'AMBIGUOUS_TARGET') {
+      setPending({
+        command,
+        ...(result.candidates ? { candidates: result.candidates } : {}),
+      })
+    }
   }
 
   const selectLayer = (id: string) => {
@@ -161,6 +224,15 @@ function App() {
     setText(transcript)
     setStatus('语音已识别，请确认后执行。')
   })
+
+  const confirmPending = async (layer?: Layer) => {
+    if (!pending) return
+    const command = layer
+      ? { ...pending.command, target: { id: layer.id }, confidence: 1 }
+      : { ...pending.command, confidence: 1 }
+    setPending(null)
+    await runCommand(command, true)
+  }
 
   return (
     <main className="app-shell">
@@ -263,6 +335,39 @@ function App() {
               ? lastResult.message
               : status}
           </p>
+          {pending ? (
+            <section className="confirmation" aria-label="指令确认">
+              <strong>执行前确认</strong>
+              <p>{status}</p>
+              {pending.candidates?.map((candidate) => (
+                <button
+                  type="button"
+                  key={candidate.id}
+                  onClick={() => void confirmPending(candidate)}
+                >
+                  选择“{candidate.name}”
+                  <small>
+                    位置 {Math.round(candidate.x)}, {Math.round(candidate.y)}
+                  </small>
+                </button>
+              ))}
+              {!pending.candidates ? (
+                <button type="button" onClick={() => void confirmPending()}>
+                  确认执行
+                </button>
+              ) : null}
+              <button
+                className="cancel-confirm"
+                type="button"
+                onClick={() => {
+                  setPending(null)
+                  setStatus('已取消本次指令。')
+                }}
+              >
+                取消
+              </button>
+            </section>
+          ) : null}
         </section>
 
         <LayerPanel project={project} execute={runCommand} />

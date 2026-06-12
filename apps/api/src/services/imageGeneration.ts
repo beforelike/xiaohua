@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
 
@@ -20,7 +21,7 @@ export class ImageGenerationError extends Error {
 function assetId(request: GenerateAssetRequest) {
   return createHash('sha256')
     .update(
-      `${request.commandId}:${request.prompt}:${String(request.width)}x${String(request.height)}`,
+      `${request.commandId}:${request.prompt}:${String(request.width)}x${String(request.height)}:${request.background}`,
     )
     .digest('hex')
     .slice(0, 24)
@@ -36,6 +37,55 @@ function fallbackSvg(request: GenerateAssetRequest) {
 export function resolveAssetPath(cacheDirectory: string, id: string) {
   if (!/^[a-f0-9]{24}$/.test(id)) return null
   return path.join(cacheDirectory, id)
+}
+
+export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
+  const image = sharp(input).ensureAlpha()
+  const { data, info } = await image.raw().toBuffer({ resolveWithObject: true })
+  const pixel = (x: number, y: number) => {
+    const offset = (y * info.width + x) * info.channels
+    return [
+      data[offset] ?? 255,
+      data[offset + 1] ?? 255,
+      data[offset + 2] ?? 255,
+    ] as const
+  }
+  const corners = [
+    pixel(0, 0),
+    pixel(info.width - 1, 0),
+    pixel(0, info.height - 1),
+    pixel(info.width - 1, info.height - 1),
+  ]
+  const background: [number, number, number] = [
+    Math.round(corners.reduce((sum, color) => sum + color[0], 0) / 4),
+    Math.round(corners.reduce((sum, color) => sum + color[1], 0) / 4),
+    Math.round(corners.reduce((sum, color) => sum + color[2], 0) / 4),
+  ]
+
+  for (let offset = 0; offset < data.length; offset += info.channels) {
+    const red = data[offset] ?? 255
+    const green = data[offset + 1] ?? 255
+    const blue = data[offset + 2] ?? 255
+    const distance = Math.sqrt(
+      (red - background[0]) ** 2 +
+        (green - background[1]) ** 2 +
+        (blue - background[2]) ** 2,
+    )
+    if (distance < 24) data[offset + 3] = 0
+    else if (distance < 64) {
+      data[offset + 3] = Math.round(((distance - 24) / 40) * 255)
+    }
+  }
+
+  return sharp(data, {
+    raw: {
+      width: info.width,
+      height: info.height,
+      channels: 4,
+    },
+  })
+    .png()
+    .toBuffer()
 }
 
 export async function generateAsset(
@@ -57,7 +107,7 @@ export async function generateAsset(
       width: request.width,
       height: request.height,
       mimeType: 'image/png',
-      backgroundRemoved: false,
+      backgroundRemoved: request.background === 'transparent',
       source: 'generated',
     }
   } catch {
@@ -92,14 +142,19 @@ export async function generateAsset(
           '',
         )
         if (!encoded) throw new Error('SD_EMPTY_IMAGE')
-        await writeFile(pngPath, Buffer.from(encoded, 'base64'))
+        const generated = Buffer.from(encoded, 'base64')
+        const output =
+          request.background === 'transparent'
+            ? await removeSolidBackground(generated)
+            : generated
+        await writeFile(pngPath, output)
         return {
           id,
           url: `/api/assets/${id}`,
           width: request.width,
           height: request.height,
           mimeType: 'image/png',
-          backgroundRemoved: false,
+          backgroundRemoved: request.background === 'transparent',
           source: 'generated',
         }
       } catch (error) {

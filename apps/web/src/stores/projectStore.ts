@@ -16,6 +16,10 @@ export interface ProjectStore {
   project: Project
   lastResult: CommandResult | null
   addReadyLayer: (input: NewLayer) => Layer
+  replaceLayerAsset: (
+    id: string,
+    asset: Pick<Layer, 'assetUrl' | 'source'> & { prompt?: string },
+  ) => boolean
   execute: (command: DrawingCommand) => CommandResult
   replaceProject: (project: Project) => void
 }
@@ -34,6 +38,31 @@ export function createProjectStore(
       const layer = createLayer(current, input, factory)
       set({ project: addLayer(current, layer, now()), lastResult: null })
       return layer
+    },
+    replaceLayerAsset: (id, asset) => {
+      const current = get().project
+      const target = current.layers.find((layer) => layer.id === id)
+      if (!target || !asset.assetUrl) return false
+      set({
+        project: {
+          ...current,
+          layers: current.layers.map((layer) =>
+            layer.id === id
+              ? {
+                  ...layer,
+                  assetUrl: asset.assetUrl,
+                  source: asset.source,
+                  status: 'ready',
+                  ...(asset.prompt ? { prompt: asset.prompt } : {}),
+                  updatedAt: now(),
+                }
+              : layer,
+          ),
+          updatedAt: now(),
+        },
+        lastResult: null,
+      })
+      return true
     },
     execute: (command) => {
       const result = executeCommand(get().project, command, now())

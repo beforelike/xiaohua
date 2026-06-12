@@ -175,4 +175,154 @@ describe('App', () => {
     ).toBeInTheDocument()
     delete window.SpeechRecognition
   })
+
+  it('requires confirmation before executing a low-confidence command', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            command: {
+              schemaVersion: 1,
+              id: 'uncertain-create',
+              action: 'create',
+              objectType: 'preset',
+              properties: { name: '云朵' },
+              requiresGeneration: false,
+              confidence: 0.6,
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '可能加一朵云' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    expect(
+      await screen.findByRole('button', { name: '确认执行' }),
+    ).toBeInTheDocument()
+    expect(useProjectStore.getState().project.layers).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: '确认执行' }))
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+  })
+
+  it('asks the user to choose when duplicate targets are ambiguous', async () => {
+    const add = useProjectStore.getState().addReadyLayer
+    const sun = {
+      name: '太阳',
+      type: 'preset' as const,
+      source: 'preset' as const,
+      width: 100,
+      height: 100,
+      createdBy: 'voice' as const,
+    }
+    add({ ...sun, id: 'sun-left', x: 20, y: 30 })
+    add({ ...sun, id: 'sun-right', x: 700, y: 40 })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            command: {
+              schemaVersion: 1,
+              id: 'delete-sun',
+              action: 'delete',
+              target: { name: '太阳' },
+              requiresGeneration: false,
+              confidence: 1,
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '删除太阳' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    const candidates = await screen.findAllByRole('button', {
+      name: /选择“太阳”/,
+    })
+    expect(candidates).toHaveLength(2)
+    fireEvent.click(candidates[0]!)
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+  })
+
+  it('regenerates only the selected asset and preserves transforms', async () => {
+    useProjectStore.getState().addReadyLayer({
+      id: 'tree',
+      name: '树',
+      type: 'preset',
+      source: 'preset',
+      assetUrl: 'old.svg',
+      width: 220,
+      height: 320,
+      x: 18,
+      y: 29,
+      rotation: 12,
+      createdBy: 'voice',
+    })
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            command: {
+              schemaVersion: 1,
+              id: 'regenerate-tree',
+              action: 'modify',
+              target: { id: 'tree' },
+              prompt: '一棵更梦幻的树',
+              requiresGeneration: true,
+              confidence: 0.95,
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            asset: { url: '/api/assets/new-tree', source: 'generated' },
+          }),
+          { status: 200 },
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '把树换成更梦幻的风格' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('已重新生成树')).toBeInTheDocument(),
+    )
+    expect(useProjectStore.getState().project.layers[0]).toMatchObject({
+      id: 'tree',
+      x: 18,
+      y: 29,
+      width: 220,
+      height: 320,
+      rotation: 12,
+      assetUrl: '/api/assets/new-tree',
+      source: 'generated',
+    })
+  })
 })

@@ -16,6 +16,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "sharp": "^0.35.1",
     "zod": "^4.1.5"
   },
   "devDependencies": {
@@ -26,8 +27,8 @@
     "eslint": "^10.0.0",
     "globals": "^17.0.0",
     "supertest": "^7.1.4",
-    "tsx": "^4.20.5",
     "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.0.0"
   }

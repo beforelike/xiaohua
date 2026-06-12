@@ -40,4 +40,12 @@ describe('parseRuleCommand', () => {
   it('returns null for unsupported text', () => {
     expect(parse('今天天气不错')).toBeNull()
   })
+
+  it('marks object restyling as generation without changing its target', () => {
+    expect(parse('把树换成更梦幻的风格')).toMatchObject({
+      action: 'modify',
+      target: { name: '树' },
+      requiresGeneration: true,
+    })
+  })
 })
