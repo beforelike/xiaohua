@@ -1,6 +1,6 @@
 # 快速开始
 
-仓库已提供可直接运行的 P1 应用。默认 Mock 配置不要求安装本地模型，适合开发、评审和 CI；真实模型服务按需启用。
+仓库已提供可直接运行的 P1 应用。本地开发默认连接 Stable Diffusion WebUI，CI 会显式使用 Mock provider。
 
 ## 环境要求
 
@@ -16,7 +16,7 @@
 ASR_PROVIDER=mock
 ASR_BASE_URL=http://127.0.0.1:9000
 COMMAND_PROVIDER=rules
-IMAGE_PROVIDER=mock
+IMAGE_PROVIDER=stable-diffusion-webui
 SD_WEBUI_BASE_URL=http://127.0.0.1:7860
 ASSET_CACHE_DIR=.cache/assets
 RATE_LIMIT_WINDOW_MS=60000
@@ -32,7 +32,7 @@ npm ci
 npm run dev
 ```
 
-访问 `http://127.0.0.1:5173`。需要真实图片生成时，将 `IMAGE_PROVIDER` 改为 `stable-diffusion-webui`；需要本地语音识别时，将 `ASR_PROVIDER` 改为 `local`。
+访问 `http://127.0.0.1:5173`。Vite 默认固定使用该端口，端口占用时会直接报错；API 同时允许 5173 和手动备用的 5174 来源。需要禁用真实图片生成时，将 `IMAGE_PROVIDER` 改为 `mock`；需要本地语音识别时，将 `ASR_PROVIDER` 改为 `local`。
 
 ## 质量命令
 

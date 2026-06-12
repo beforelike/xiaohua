@@ -25,9 +25,16 @@ async function createConfig(
     RATE_LIMIT_WINDOW_MS: 60_000,
     RATE_LIMIT_MAX: 120,
     COMMAND_PROVIDER: 'rules',
+    LLM_ENHANCE_PROMPT: false,
     IMAGE_PROVIDER: imageProvider,
     SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
+    SD_STEPS: 28,
+    SD_CFG_SCALE: 7,
+    SD_SAMPLER: 'DPM++ 2M Karras',
+    SD_DENOISING_STRENGTH: 0.7,
+    SD_STYLE_PROMPT: 'digital illustration',
     ASSET_CACHE_DIR: directory,
+    STATIC_DIR: '',
     ASR_PROVIDER: 'mock',
   } satisfies AppConfig
 }
@@ -101,6 +108,80 @@ describe('imageGeneration', () => {
     await generateAsset(request, config, fetcher)
 
     expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('separates cache entries when style or negative prompt changes', async () => {
+    const config = await createConfig()
+    const png = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+          status: 200,
+        }),
+      ),
+    )
+
+    const first = await generateAsset(
+      { ...request, style: 'watercolor', negativePrompt: 'photo' },
+      config,
+      fetcher,
+    )
+    const second = await generateAsset(
+      { ...request, style: 'photorealistic', negativePrompt: 'cartoon' },
+      config,
+      fetcher,
+    )
+
+    expect(first.id).not.toBe(second.id)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    const requestBody = fetcher.mock.calls[0]?.[1]?.body
+    expect(typeof requestBody).toBe('string')
+    const firstBody = JSON.parse(requestBody as string) as {
+      prompt: string
+      negative_prompt: string
+    }
+    expect(firstBody.prompt).toContain('watercolor')
+    expect(firstBody.prompt).toContain('isolated object')
+    expect(firstBody.negative_prompt).toContain('photo')
+  })
+
+  it('separates cache entries by image provider', async () => {
+    const config = await createConfig('mock')
+    const mockAsset = await generateAsset(request, config)
+    const png = await sharp({
+      create: {
+        width: 8,
+        height: 8,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+        status: 200,
+      }),
+    )
+
+    const generatedAsset = await generateAsset(
+      request,
+      { ...config, IMAGE_PROVIDER: 'stable-diffusion-webui' },
+      fetcher,
+    )
+
+    expect(generatedAsset.id).not.toBe(mockAsset.id)
+    expect(generatedAsset.source).toBe('generated')
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('falls back to a local SVG after two provider failures', async () => {

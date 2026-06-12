@@ -169,6 +169,10 @@ describe('App', () => {
             confidence: 1,
           },
         }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/generated-sun', source: 'generated' },
+        }),
     })
     render(<App />)
 
@@ -179,12 +183,134 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '执行' }))
 
     await waitFor(() =>
-      expect(screen.getByText('已添加太阳')).toBeInTheDocument(),
+      expect(screen.getByText('新素材已经加入画布')).toBeInTheDocument(),
     )
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/commands/parse',
       expect.anything(),
     )
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/assets/generate',
+      expect.anything(),
+    )
+    expect(useProjectStore.getState().project.layers[0]).toMatchObject({
+      name: '太阳',
+      assetUrl: '/api/assets/generated-sun',
+      source: 'generated',
+    })
+  })
+
+  it('creates separated scene layers with the suggested composition', async () => {
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'horse-scene',
+            action: 'create',
+            style:
+              'photorealistic wildlife photography, natural colors, cinematic daylight',
+            objects: [
+              {
+                name: '草原',
+                prompt: 'wide grassland',
+                negativePrompt: 'animals',
+                background: 'opaque',
+                isBackground: true,
+                position: 'center',
+                size: 'full',
+              },
+              {
+                name: '马',
+                prompt: 'light golden horse galloping',
+                negativePrompt: 'background',
+                background: 'transparent',
+                isBackground: false,
+                position: 'bottom',
+                size: 'medium',
+              },
+            ],
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/generated', source: 'generated' },
+        }),
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '画马在草原上奔跑' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(2),
+    )
+    const [grassland, horse] = useProjectStore.getState().project.layers
+    expect(grassland).toMatchObject({
+      name: '草原',
+      x: 0,
+      y: 0,
+      width: 1024,
+      height: 768,
+      zIndex: 0,
+    })
+    expect(horse).toMatchObject({
+      name: '马',
+      y: 392,
+      width: 328,
+      height: 328,
+      zIndex: 1,
+    })
+    expect(useProjectStore.getState().project.globalStyle).toContain(
+      'photorealistic',
+    )
+  })
+
+  it('uses the style automatically selected by the LLM', async () => {
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'styled-horse',
+            action: 'create',
+            prompt: '一匹马',
+            style:
+              'photorealistic wildlife photography, natural colors, cinematic daylight',
+            properties: { name: '马' },
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/horse', source: 'generated' },
+        }),
+    })
+    render(<App />)
+
+    expect(screen.queryByLabelText('画风技能')).not.toBeInTheDocument()
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '画一匹马' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+    const generationCall = fetchMock.mock.calls.find(
+      ([url]) => url === '/api/assets/generate',
+    )
+    const generationBody = JSON.parse(String(generationCall?.[1]?.body)) as {
+      style: string
+    }
+    expect(generationBody.style).toContain('photorealistic')
   })
 
   it('uses browser speech recognition as an optional fallback', async () => {
@@ -261,6 +387,10 @@ describe('App', () => {
             requiresGeneration: false,
             confidence: 0.6,
           },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/generated-cloud', source: 'generated' },
         }),
     })
     render(<App />)
@@ -377,5 +507,37 @@ describe('App', () => {
       assetUrl: '/api/assets/new-tree',
       source: 'generated',
     })
+  })
+
+  it('handles asset generation network failures without an unhandled rejection', async () => {
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'create-generated',
+            action: 'create',
+            objectType: 'image',
+            prompt: '一只小猫',
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () => {
+        throw new TypeError('network unavailable')
+      },
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '画一只小猫' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    expect(
+      await screen.findByText('操作失败，作品已保留，请稍后重试。'),
+    ).toBeInTheDocument()
+    expect(useProjectStore.getState().project.layers).toHaveLength(0)
   })
 })
