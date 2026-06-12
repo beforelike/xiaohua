@@ -20,8 +20,9 @@
 - 前端：React、TypeScript、Vite
 - 画布：Konva / react-konva
 - 状态管理：Zustand
-- 语音识别：Web Speech API，保留可替换适配器
-- 服务端：Node.js API 层，代理指令解析与图片生成请求
+- 语音识别：本地 ASR 服务，浏览器 Web Speech API 仅作可选降级
+- 图片生成：本地 Stable Diffusion WebUI REST API
+- 服务端：Node.js 本地 API 层，统一调用 ASR、指令解析和图片生成
 - 测试：Vitest、React Testing Library、Playwright
 - 代码质量：ESLint、Prettier、TypeScript 严格模式
 
@@ -39,6 +40,7 @@
 - [任务拆解](docs/tasks.md)
 - [快速开始](docs/quickstart.md)
 - [贡献指南](CONTRIBUTING.md)
+- [训练营交付工作流](docs/camp-workflow.md)
 - [原始需求与规范](doc/)
 
 ## 仓库结构
@@ -64,7 +66,8 @@
 
 ## 安全与成本
 
-- API 密钥只能保存在服务端环境变量中，禁止提交到仓库或下发浏览器。
+- 默认运行链路不依赖境外云服务，保证中国大陆本地环境可用。
+- Stable Diffusion WebUI 只监听本机或可信局域网，不直接暴露到公网。
 - 图片生成限制分辨率、超时和重试次数，并优先命中预设素材或缓存。
 - 所有模型输出在执行前必须通过结构校验和动作白名单。
 

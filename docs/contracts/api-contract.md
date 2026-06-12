@@ -63,7 +63,7 @@
 
 ## POST /assets/generate
 
-生成单个透明背景素材。
+通过本地 Stable Diffusion WebUI 生成单个素材，并在需要时执行本地背景去除。
 
 请求：
 
@@ -98,7 +98,8 @@
 
 - `commandId` 作为幂等键的一部分，重复请求应尽量复用结果。
 - 只允许配置内的尺寸与 MIME 类型。
-- 服务端获取并代理远程素材，避免客户端暴露供应商 URL 和画布跨域污染。
+- 服务端调用配置的本地 `SD_WEBUI_BASE_URL`，禁止接受客户端传入任意上游 URL。
+- 上游使用 Stable Diffusion WebUI `/sdapi/v1/txt2img`，返回的 Base64 图片转存为同源素材。
 - 超时 45 秒，最多重试一次；随后尝试预设素材并在 `source` 标明。
 
 ## GET /assets/:id
