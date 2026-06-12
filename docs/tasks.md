@@ -19,8 +19,8 @@
 
 ## 阶段 2：画布与图层
 
-- [ ] T201 实现 Project、Layer、Command Schema 与测试。
-- [ ] T202 实现 Zustand 项目 store 和原子命令执行器。
+- [x] T201 实现 Project、Layer、Command Schema 与测试。
+- [x] T202 实现 Zustand 项目 store 和原子命令执行器。
 - [ ] T203 实现 Konva 画布和图片图层渲染。
 - [ ] T204 实现图层列表、选中标记、删除和层级调整。
 - [ ] T205 实现移动、缩放、旋转和画布边界策略。
