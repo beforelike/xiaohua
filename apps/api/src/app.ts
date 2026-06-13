@@ -22,6 +22,7 @@ import {
 } from './services/llmPromptEnhancer'
 import { parseRuleCommand } from './services/ruleCommandParser'
 import { normalizeCommandForContext } from './services/commandNormalizer'
+import { simpleObjectForCommand } from './services/simpleObjectCommand'
 import { checkAsrHealth, transcribeAudio } from './services/asrProvider'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -213,11 +214,24 @@ export function createApp(config: AppConfig) {
         command = normalizeCommandForContext(input, command)
       }
 
+      const simpleObject = command
+        ? simpleObjectForCommand(command, input.text)
+        : null
+      if (command && simpleObject) {
+        command = {
+          ...command,
+          style: input.context.globalStyle || config.SD_STYLE_PROMPT,
+          objects: [simpleObject],
+          requiresGeneration: true,
+        }
+      }
+
       // 所有创建命令都统一经过同一套增强器。命令解析 LLM 返回的 objects
       // 只用于语义理解，不能绕过更严格的图层职责和提示词净化。
       if (
         command &&
         command.action === 'create' &&
+        !simpleObject &&
         config.LLM_ENHANCE_PROMPT &&
         config.LLM_BASE_URL &&
         config.LLM_MODEL &&

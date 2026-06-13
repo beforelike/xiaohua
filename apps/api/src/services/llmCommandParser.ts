@@ -24,6 +24,8 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
 ★★★ 核心规则 ★★★
 
 1. 当 action 为 "create" 时，必须进行对象分离：
+   - 只拆分用户明确提到的对象，不得擅自补充用户未要求的背景、环境或装饰
+   - "画一只小猫"只能创建小猫；"画一只草地上的小猫"才创建草地背景和小猫
    - 分析用户描述中的所有对象（如"马在草原上奔跑"→ "草原" + "马"）
    - 背景/场景元素（草原、天空、海洋等）： background="opaque", isBackground=true
    - 前景主体对象（马、人物、建筑等）： background="transparent", isBackground=false

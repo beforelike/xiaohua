@@ -161,4 +161,53 @@ describe('llmPromptEnhancer', () => {
     expect(horses?.negativePrompt).toContain('single horse, one horse')
     expect(horses?.negativePrompt).toContain('river, water, stream')
   })
+
+  it('drops a hallucinated background from a single-object request', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  style: 'soft children illustration',
+                  objects: [
+                    {
+                      name: '自然草地背景',
+                      prompt: 'green meadow',
+                      negativePrompt: 'animals',
+                      background: 'opaque',
+                      isBackground: true,
+                      position: 'center',
+                      size: 'full',
+                    },
+                    {
+                      name: '小猫',
+                      prompt: 'an adorable kitten',
+                      negativePrompt: 'background',
+                      background: 'transparent',
+                      isBackground: false,
+                      position: 'center',
+                      size: 'medium',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await enhancePrompt(
+      '画一只小猫',
+      '',
+      { selectedLayerId: null, recentLayers: [], globalStyle: '' },
+      config,
+      fetcher,
+    )
+
+    expect(result.objects.map((object) => object.name)).toEqual(['小猫'])
+  })
 })

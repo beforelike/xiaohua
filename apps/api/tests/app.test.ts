@@ -148,7 +148,7 @@ describe('API application', () => {
     })
   })
 
-  it('enhances rule-matched create commands instead of bypassing the LLM', async () => {
+  it('enhances complex rule-matched create commands with the LLM', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -160,13 +160,22 @@ describe('API application', () => {
                     'soft hand-painted storybook illustration, warm colors',
                   objects: [
                     {
-                      name: '太阳',
-                      prompt: 'warm hand-painted sun',
-                      negativePrompt: 'text, watermark',
+                      name: '草原',
+                      prompt: 'wide grassland',
+                      negativePrompt: 'animals, text',
+                      background: 'opaque',
+                      isBackground: true,
+                      position: 'center',
+                      size: 'full',
+                    },
+                    {
+                      name: '马',
+                      prompt: 'a horse galloping',
+                      negativePrompt: 'text, watermark, background',
                       background: 'transparent',
                       isBackground: false,
-                      position: 'top-right',
-                      size: 'small',
+                      position: 'center',
+                      size: 'medium',
                     },
                   ],
                 }),
@@ -195,7 +204,7 @@ describe('API application', () => {
       .post('/api/commands/parse')
       .send({
         schemaVersion: 1,
-        text: '画一个太阳',
+        text: '画一匹马在草原上奔跑',
         context: {
           selectedLayerId: null,
           recentLayers: [],
@@ -210,12 +219,56 @@ describe('API application', () => {
       .parse(response.body)
     expect(body.command.objects).toEqual([
       expect.objectContaining({
-        name: '太阳',
-        prompt: 'warm hand-painted sun',
-        position: 'top-right',
+        name: '草原',
+      }),
+      expect.objectContaining({
+        name: '马',
+        prompt: 'a horse galloping',
       }),
     ])
     expect(body.command.style).toContain('storybook')
+  })
+
+  it('uses the local fast path for a common single object', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetcher)
+    const llmConfig = getConfig({
+      HOST: '127.0.0.1',
+      PORT: '8787',
+      WEB_ORIGIN: 'http://127.0.0.1:5173',
+      COMMAND_PROVIDER: 'rules',
+      LLM_BASE_URL: 'http://127.0.0.1:11434/v1',
+      LLM_MODEL: 'local-model',
+      LLM_API_KEY: 'test',
+      LLM_ENHANCE_PROMPT: 'true',
+      IMAGE_PROVIDER: 'mock',
+      ASR_PROVIDER: 'mock',
+    })
+
+    const response = await request(createApp(llmConfig))
+      .post('/api/commands/parse')
+      .send({
+        schemaVersion: 1,
+        text: '画一只小猫',
+        context: {
+          selectedLayerId: null,
+          recentLayers: [],
+          globalStyle: '',
+        },
+      })
+
+    expect(response.status).toBe(200)
+    expect(fetcher).not.toHaveBeenCalled()
+    const body = z
+      .object({ command: drawingCommandSchema })
+      .parse(response.body)
+    expect(body.command.objects).toEqual([
+      expect.objectContaining({
+        name: '小猫',
+        background: 'transparent',
+        isBackground: false,
+      }),
+    ])
   })
 
   it('falls back to a configured LLM when rules do not understand the command', async () => {
@@ -262,9 +315,7 @@ describe('API application', () => {
         text: '请重新安排一下奔跑的马，放到画面东北区域',
         context: {
           selectedLayerId: null,
-          recentLayers: [
-            { id: 'horse', name: '奔跑的马', type: 'image' },
-          ],
+          recentLayers: [{ id: 'horse', name: '奔跑的马', type: 'image' }],
           globalStyle: '',
         },
       })

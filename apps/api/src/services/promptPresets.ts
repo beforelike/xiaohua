@@ -78,7 +78,9 @@ export const promptPresets: PromptPreset[] = [
   {
     keywords: ['猫', '小猫', '猫咪'],
     prompt:
-      'an adorable cartoon cat with big round eyes, fluffy fur, cute pose, warm colors, kawaii style, simple and clean illustration',
+      '(one single cat only:1.8), (1cat:1.8), solo, exactly one domestic cat, animal, quadruped, unmistakable feline anatomy, four legs with paws, furry body, cat face, triangular ears, whiskers, one visible tail, full body, sitting, looking at viewer, centered composition, white background, simple background',
+    negativeExtra:
+      'multiple cats, two cats, three cats, four cats, five cats, six cats, repeated cat, duplicate cat, contact sheet, character sheet, collage, grid, panels, multiple views, human, humanoid, anthropomorphic, abstract, geometric shape, ring, circle, torus, metal, metallic, machine, appliance, plate, disk, bowl, lid, object without face, extra tails, multiple tails',
   },
   {
     keywords: ['狗', '小狗', '狗狗', '犬'],

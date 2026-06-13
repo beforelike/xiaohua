@@ -18,6 +18,7 @@ import {
   parseProject,
 } from './features/project/downloads'
 import { resolveTarget } from './features/commands/resolveTarget'
+import { shouldBuildCharacterAsset } from './features/generation/generationStrategy'
 import { useVoiceInput } from './features/voice/useVoiceInput'
 import { useProjectStore } from './stores/projectStore'
 
@@ -161,7 +162,10 @@ function App() {
                       candidate.name === obj.name &&
                       candidate.style === (command.style ?? ''),
                   )
-            if (!obj.isBackground && !characterAsset) {
+            if (
+              !characterAsset &&
+              shouldBuildCharacterAsset(obj, command.prompt)
+            ) {
               const identityPrompt = obj.identityPrompt ?? obj.prompt
               setStatus(`正在建立“${obj.name}”的身份锚点…`)
               const anchorResponse = await fetch('/api/assets/generate', {

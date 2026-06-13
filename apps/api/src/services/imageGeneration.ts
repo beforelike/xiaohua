@@ -4,19 +4,29 @@ import path from 'node:path'
 import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
-import {
-  composeNegativePrompt,
-  composePositivePrompt,
-} from './promptComposer'
+import { composeNegativePrompt, composePositivePrompt } from './promptComposer'
 import { findPreset } from './promptPresets'
 
 interface StableDiffusionResponse {
   images?: string[]
 }
 
-const PROMPT_PIPELINE_VERSION = 6
+const PROMPT_PIPELINE_VERSION = 7
 const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
+
+function animalSpeciesConstraint(prompt: string) {
+  if (/\b(?:cat|cats|kitten|kittens)\b|猫/i.test(prompt)) {
+    return '(one single cat only:1.8), (1cat:1.8), solo, exactly one domestic cat animal, unmistakable feline anatomy, four legs with paws, furry body, cat face, triangular ears, whiskers and one visible tail'
+  }
+  if (/\b(?:dog|dogs|puppy|puppies)\b|狗|犬/i.test(prompt)) {
+    return '(domestic dog animal:1.5), unmistakable canine anatomy, four legs with paws, furry body, dog muzzle, visible ears and tail'
+  }
+  if (/\b(?:horse|horses|pony)\b|马/i.test(prompt)) {
+    return '(real horse animal:1.5), unmistakable equine anatomy, four long legs with hooves, horse head, mane and visible tail'
+  }
+  return 'real ordinary quadruped animal, biologically correct species anatomy, natural animal body and limbs'
+}
 
 export class ImageGenerationError extends Error {
   constructor(
@@ -255,7 +265,7 @@ export async function generateAsset(
         const isEnhanced = request.enhancedPrompt ?? false
         const isAnimalCharacter = ANIMAL_CHARACTER_PATTERN.test(request.prompt)
         const animalIdentityConstraint = isAnimalCharacter
-          ? ', (real ordinary quadruped animal:1.5), biologically correct species anatomy, natural animal body and limbs'
+          ? `, ${animalSpeciesConstraint(request.prompt)}`
           : ''
         const characterSheetPrompt =
           generationMode === 'character-sheet'
@@ -266,7 +276,7 @@ export async function generateAsset(
               ? isAnimalCharacter
                 ? `${request.prompt}${animalIdentityConstraint}, wildlife animal photograph, preserve species, coat colors, markings and proportions from the reference image, follow the requested animal action and four-legged pose exactly; the text prompt controls composition and body pose`
                 : `${request.prompt}, preserve identity, colors, markings and proportions from the reference image, but follow the requested action and pose exactly; the text prompt controls composition and body pose`
-              : request.prompt
+              : `${request.prompt}${animalIdentityConstraint}`
         const enhancedPrompt = buildPrompt(
           characterSheetPrompt,
           request.background,
@@ -279,7 +289,7 @@ export async function generateAsset(
             ? 'cropped turnaround, inconsistent views, different character in each view'
             : '',
           isAnimalCharacter
-            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts'
+            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, metal object, metallic object, machine, appliance, plate, disk, bowl, lid, object without face, extra tails, multiple tails'
             : '',
         ]
           .filter(Boolean)
@@ -296,9 +306,7 @@ export async function generateAsset(
               }
             }
           | undefined
-        if (
-          generationMode === 'character-action' && request.referenceAssetId
-        ) {
+        if (generationMode === 'character-action' && request.referenceAssetId) {
           const referencePath = resolveAssetPath(
             cacheDirectory,
             request.referenceAssetId,
@@ -340,9 +348,7 @@ export async function generateAsset(
               batch_size: 1,
               restore_faces: false,
               tiling: false,
-              ...(alwaysonScripts
-                ? { alwayson_scripts: alwaysonScripts }
-                : {}),
+              ...(alwaysonScripts ? { alwayson_scripts: alwaysonScripts } : {}),
             }),
             signal: AbortSignal.timeout(90_000),
           },
