@@ -145,7 +145,9 @@ function App() {
     if (command.action === 'create') {
       // 多对象创建流程：当 LLM 返回了 objects 数组时，逐个生成并创建图层
       if (command.objects && command.objects.length > 0) {
-        setStatus(`正在生成 ${String(command.objects.length)} 个对象…`)
+        const totalObjects = command.objects.length
+        let completedObjects = 0
+        setStatus(`正在生成 ${totalObjects} 个对象 (0/${totalObjects})…`)
         const generated: Array<{
           object: SceneObject
           asset: { url: string; source: 'generated' | 'preset' }
@@ -167,7 +169,7 @@ function App() {
               shouldBuildCharacterAsset(obj, command.prompt)
             ) {
               const identityPrompt = obj.identityPrompt ?? obj.prompt
-              setStatus(`正在建立“${obj.name}”的身份锚点…`)
+              setStatus(`正在建立“${obj.name}”的身份锚点 (${completedObjects}/${totalObjects})…`)
               const anchorResponse = await fetch('/api/assets/generate', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
@@ -196,7 +198,7 @@ function App() {
                   source: 'generated' | 'preset'
                 }
               }
-              setStatus(`正在建立“${obj.name}”的三视图辅助图…`)
+              setStatus(`正在建立“${obj.name}”的三视图辅助图 (${completedObjects}/${totalObjects})…`)
               const turnaroundResponse = await fetch('/api/assets/generate', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
@@ -238,7 +240,7 @@ function App() {
                 style: command.style ?? '',
               })
             }
-            setStatus(`正在生成“${obj.name}”动作素材…`)
+            setStatus(`正在生成“${obj.name}”动作素材 (${completedObjects}/${totalObjects})…`)
             const response = await fetch('/api/assets/generate', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -273,6 +275,8 @@ function App() {
                 ? { characterAssetId: characterAsset.id }
                 : {}),
             })
+            completedObjects++
+            setStatus(`已完成 ${completedObjects}/${totalObjects} 个对象…`)
           } catch {
             setStatus(`生成“${obj.name}”时出错，作品未修改。`)
             return

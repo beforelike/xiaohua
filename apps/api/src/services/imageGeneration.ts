@@ -289,7 +289,7 @@ export async function generateAsset(
             ? 'cropped turnaround, inconsistent views, different character in each view'
             : '',
           isAnimalCharacter
-            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, metal object, metallic object, machine, appliance, plate, disk, bowl, lid, object without face, extra tails, multiple tails'
+            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, object without face, extra tails, multiple tails'
             : '',
         ]
           .filter(Boolean)

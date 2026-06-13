@@ -55,7 +55,7 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
    - 当 action="create" 且有多个对象时，必须填写 objects 数组
    - requiresGeneration: 创建时为 true
 
-输出示例（用户输入"画马在草原上奔跑"）：
+输出示例1（用户输入"画马在草原上奔跑"，因为明确提到草原，所以拆分出背景层）：
 {
   "schemaVersion": 1,
   "id": "cmd-xxx",
@@ -85,6 +85,29 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
   "objectType": "image",
   "requiresGeneration": true,
   "confidence": 0.95
+}
+
+输出示例2（用户输入"画一只小猫"，因为未提到背景，且"小猫"为前景元素，所以不生成背景层）：
+{
+  "schemaVersion": 1,
+  "id": "cmd-yyy",
+  "action": "create",
+  "prompt": "画一只小猫",
+  "style": "photorealistic photography",
+  "objects": [
+    {
+      "name": "小猫",
+      "prompt": "a cute little cat, fluffy fur, sitting, looking at viewer, isolated object, solid white background, no background clutter, single subject",
+      "negativePrompt": "complex background, busy background, multiple cats, lowres, bad anatomy",
+      "background": "transparent",
+      "isBackground": false,
+      "position": "center",
+      "size": "medium"
+    }
+  ],
+  "objectType": "image",
+  "requiresGeneration": true,
+  "confidence": 0.98
 }
 
 只输出 JSON，不要输出任何其他内容。`
