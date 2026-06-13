@@ -357,6 +357,60 @@ describe('App', () => {
     expect(generationBody.style).toContain('photorealistic')
   })
 
+  it('generates a simple static object once without character setup', async () => {
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'simple-cat',
+            action: 'create',
+            prompt: '画一只小猫',
+            objects: [
+              {
+                name: '小猫',
+                prompt: 'an adorable domestic kitten sitting calmly',
+                negativePrompt: 'metal object',
+                background: 'transparent',
+                isBackground: false,
+                position: 'center',
+                size: 'medium',
+              },
+            ],
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: {
+            id: 'c'.repeat(24),
+            url: '/api/assets/simple-cat',
+            source: 'generated',
+          },
+        }),
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '画一只小猫' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === '/api/assets/generate'),
+    ).toHaveLength(1)
+    expect(useProjectStore.getState().project.characterAssets).toHaveLength(0)
+    expect(useProjectStore.getState().project.layers[0]).toMatchObject({
+      name: '小猫',
+      assetUrl: '/api/assets/simple-cat',
+    })
+  })
+
   it('uses browser speech recognition as an optional fallback', async () => {
     const start = vi.fn()
     class Recognition {

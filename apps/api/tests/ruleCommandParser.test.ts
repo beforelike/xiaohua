@@ -52,6 +52,13 @@ describe('parseRuleCommand', () => {
     })
   })
 
+  it('recognizes a common animal as one named object', () => {
+    expect(parse('画一只小猫')).toMatchObject({
+      action: 'create',
+      properties: { name: '小猫' },
+    })
+  })
+
   it('marks object restyling as generation without changing its target', () => {
     expect(parse('把树换成更梦幻的风格')).toMatchObject({
       action: 'modify',

@@ -14,7 +14,23 @@ const presetObjectNames = [
   '月亮',
   '花',
   '房子',
+  '小猫',
+  '猫咪',
+  '猫',
+  '小狗',
+  '狗狗',
+  '狗',
+  '小鸟',
+  '鸟',
 ]
+
+function canonicalObjectName(name: string) {
+  if (['云', '云朵'].includes(name)) return '云朵'
+  if (['猫', '猫咪', '小猫'].includes(name)) return '小猫'
+  if (['狗', '狗狗', '小狗'].includes(name)) return '小狗'
+  if (['鸟', '小鸟'].includes(name)) return '小鸟'
+  return name
+}
 
 function objectNameFromText(
   text: string,
@@ -150,7 +166,7 @@ export function parseRuleCommand(
       prompt: request.text,
       properties: {
         ...(position ? { position } : {}),
-        ...(name ? { name: name === '云' ? '云朵' : name } : {}),
+        ...(name ? { name: canonicalObjectName(name) } : {}),
       },
       requiresGeneration: !name,
       confidence: name ? 0.99 : 0.88,

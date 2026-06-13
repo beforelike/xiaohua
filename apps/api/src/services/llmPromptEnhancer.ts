@@ -81,6 +81,8 @@ const enhanceResultSchema = z.object({
 
 const ENVIRONMENT_TERMS =
   /\b(?:river|water|stream|creek|lake|pond|shore|shoreline|riverbank|forest|woodland|trees?|grassland|meadow|landscape|scenery|environment|background|reflection|reflections|ripples?|rocks?|sky|clouds?)\b/i
+const EXPLICIT_ENVIRONMENT_INTENT =
+  /(?:背景|场景|草原|草地|草坪|森林|树林|河边|河流|小溪|溪流|湖边|湖泊|海边|海洋|天空|云层|山谷|山脉|街道|房间|室内|庭院|花园|雪地|沙漠)/
 
 function sanitizeForegroundPrompt(prompt: string) {
   const actionSafe = prompt
@@ -90,7 +92,8 @@ function sanitizeForegroundPrompt(prompt: string) {
     )
     .replace(
       /\b(?:standing|walking|running|galloping)\s+(?:in|through|beside|near|along)\s+(?:a|the)?\s*(?:river|stream|creek|lake|pond|forest|meadow|grassland)\b/gi,
-      (match) => match.split(/\s+(?:in|through|beside|near|along)\s+/i)[0] ?? match,
+      (match) =>
+        match.split(/\s+(?:in|through|beside|near|along)\s+/i)[0] ?? match,
     )
 
   const subjectOnly = actionSafe
@@ -170,13 +173,17 @@ function coordinateObjects(
   userPrompt: string,
 ): EnhanceResult {
   const hasForeground = result.objects.some((object) => !object.isBackground)
-  const foregroundCount = result.objects.filter(
+  const requestedObjects =
+    hasForeground && !EXPLICIT_ENVIRONMENT_INTENT.test(userPrompt)
+      ? result.objects.filter((object) => !object.isBackground)
+      : result.objects
+  const foregroundCount = requestedObjects.filter(
     (object) => !object.isBackground,
   ).length
   const requestedCount = requestedSubjectCount(userPrompt)
   return {
     style: result.style,
-    objects: result.objects.map((object) => {
+    objects: requestedObjects.map((object) => {
       if (object.isBackground) {
         return {
           ...object,
@@ -237,6 +244,8 @@ function coordinateObjects(
 const SYSTEM_PROMPT = `你是一个专业的 Stable Diffusion 提示词工程师。你的任务是：
 
 1. **对象分离**：分析用户的中文绘图描述，将场景中的不同对象拆分为独立元素。
+   - 只能输出用户明确提到或语义必需的对象，不得为了画面更丰富而补充草地、天空、森林、房间等背景
+   - “画一只小猫”只能输出小猫一个前景对象；只有“草地上的小猫”等明确包含环境的指令才可以输出背景
    - 背景/场景元素（如草原、天空、海洋）标记为 isBackground: true, background: "opaque"
    - 前景主体对象（如马、人物、建筑）标记为 isBackground: false, background: "transparent"
    - 不要把同一背景拆成过多碎片；天空和草地可以合并为一个完整背景层
