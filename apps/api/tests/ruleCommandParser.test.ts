@@ -20,6 +20,31 @@ function parse(text: string) {
 
 describe('parseRuleCommand', () => {
   it.each([
+    ['撤销', 'undo'],
+    ['重做', 'redo'],
+    ['复制这棵树', 'duplicate'],
+    ['再来一个', 'duplicate'],
+  ] as const)('parses %s as %s', (text, action) => {
+    const command = parse(text)
+
+    expect(command?.action).toBe(action)
+    expect(command?.requiresGeneration).toBe(false)
+  })
+
+  it('parses grouping and ungrouping with explicit layer ids', () => {
+    expect(parse('把太阳和奔跑的马组合')).toMatchObject({
+      action: 'group',
+      target: { ids: ['horse', 'sun'] },
+      requiresGeneration: false,
+    })
+    expect(parse('取消太阳的组合')).toMatchObject({
+      action: 'ungroup',
+      target: { name: '太阳' },
+      requiresGeneration: false,
+    })
+  })
+
+  it.each([
     ['在右上角画一个太阳', 'create', 'top-right'],
     ['把太阳变小一点并移到右上角', 'modify', 'top-right'],
     ['删除树', 'delete', undefined],

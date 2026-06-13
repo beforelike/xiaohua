@@ -1,4 +1,10 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from 'react'
 import type {
   DrawingCommand,
   Layer,
@@ -186,6 +192,8 @@ function App() {
   const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
   const rememberIntent = useProjectStore((state) => state.rememberIntent)
   const execute = useProjectStore((state) => state.execute)
+  const canUndo = useProjectStore((state) => state.undoStack.length > 0)
+  const canRedo = useProjectStore((state) => state.redoStack.length > 0)
   const [text, setText] = useState('')
   const [status, setStatus] = useState('准备好了，请直接说出绘图指令。')
   const canvasRef = useRef<LayerCanvasHandle>(null)
@@ -426,11 +434,14 @@ function App() {
           return layer
         })
         if (command.style && command.style !== project.globalStyle) {
-          useProjectStore.getState().replaceProject({
-            ...useProjectStore.getState().project,
-            globalStyle: command.style,
-            updatedAt: new Date().toISOString(),
-          })
+          useProjectStore.getState().replaceProject(
+            {
+              ...useProjectStore.getState().project,
+              globalStyle: command.style,
+              updatedAt: new Date().toISOString(),
+            },
+            false,
+          )
         }
         setStatus(
           `已生成 ${String(results.length)} 个图层：${results.map((layer) => layer.name).join('、')}`,
@@ -964,6 +975,43 @@ function App() {
     void handleVoiceTranscript(transcript)
   })
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        return
+      }
+      const key = event.key.toLowerCase()
+      const action =
+        key === 'z'
+          ? event.shiftKey
+            ? 'redo'
+            : 'undo'
+          : key === 'd'
+            ? 'duplicate'
+            : null
+      if (!action) return
+      event.preventDefault()
+      const result = useProjectStore.getState().execute({
+        schemaVersion: 1,
+        id: crypto.randomUUID(),
+        action,
+        ...(action === 'duplicate'
+          ? { target: { reference: 'selected' as const } }
+          : {}),
+        requiresGeneration: false,
+        confidence: 1,
+      })
+      setStatus(result.message)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -983,6 +1031,38 @@ function App() {
             <span className="status-dot" />
             本地服务已连接
           </div>
+          <button
+            className="import-button"
+            type="button"
+            disabled={!canUndo}
+            onClick={() =>
+              void runCommand({
+                schemaVersion: 1,
+                id: crypto.randomUUID(),
+                action: 'undo',
+                requiresGeneration: false,
+                confidence: 1,
+              })
+            }
+          >
+            撤销
+          </button>
+          <button
+            className="import-button"
+            type="button"
+            disabled={!canRedo}
+            onClick={() =>
+              void runCommand({
+                schemaVersion: 1,
+                id: crypto.randomUUID(),
+                action: 'redo',
+                requiresGeneration: false,
+                confidence: 1,
+              })
+            }
+          >
+            重做
+          </button>
           <button
             className="import-button"
             type="button"

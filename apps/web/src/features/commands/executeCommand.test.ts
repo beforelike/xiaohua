@@ -51,6 +51,162 @@ function projectWithLayers(): Project {
 }
 
 describe('executeCommand', () => {
+  it('groups layers, moves them together, and supports ungrouping', () => {
+    let project = projectWithLayers()
+    const hat = createLayer(
+      project,
+      {
+        id: 'hat',
+        name: '帽子',
+        type: 'preset',
+        source: 'preset',
+        parentLayerId: 'tree',
+        width: 80,
+        height: 60,
+        x: 450,
+        y: 190,
+        createdBy: 'voice',
+      },
+      { now: () => now },
+    )
+    project = addLayer(project, hat, now)
+    const sunBefore = project.layers.find((layer) => layer.id === 'sun')!
+    const treeBefore = project.layers.find((layer) => layer.id === 'tree')!
+    const hatBefore = project.layers.find((layer) => layer.id === 'hat')!
+    const grouped = executeCommand(
+      project,
+      command({
+        action: 'group',
+        target: { ids: ['sun', 'tree'] },
+        requiresGeneration: false,
+      }),
+      later,
+      () => 'group-1',
+    )
+
+    expect(grouped.ok).toBe(true)
+    if (!grouped.ok) return
+    expect(
+      grouped.project.layers
+        .filter((layer) => ['sun', 'tree'].includes(layer.id))
+        .map((layer) => layer.groupId),
+    ).toEqual(['group-1', 'group-1'])
+
+    const moved = executeCommand(
+      grouped.project,
+      command({
+        action: 'modify',
+        target: { id: 'sun' },
+        properties: { x: sunBefore.x + 80, y: sunBefore.y + 40 },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+    expect(moved.ok).toBe(true)
+    if (!moved.ok) return
+    expect(
+      moved.project.layers.find((layer) => layer.id === 'tree'),
+    ).toMatchObject({
+      x: treeBefore.x + 80,
+      y: treeBefore.y + 40,
+    })
+    expect(
+      moved.project.layers.find((layer) => layer.id === 'hat'),
+    ).toMatchObject({
+      x: hatBefore.x + 80,
+      y: hatBefore.y + 40,
+    })
+
+    const ungrouped = executeCommand(
+      moved.project,
+      command({
+        action: 'ungroup',
+        target: { id: 'sun' },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+    expect(ungrouped.ok).toBe(true)
+    if (!ungrouped.ok) return
+    expect(ungrouped.project.layers.every((layer) => !layer.groupId)).toBe(true)
+  })
+
+  it('duplicates a layer and its attached children without regenerating assets', () => {
+    let project = createProject('测试', factory)
+    const parent = createLayer(
+      project,
+      {
+        id: 'tree-parent',
+        name: '树',
+        type: 'preset',
+        source: 'preset',
+        assetUrl: 'tree.svg',
+        width: 220,
+        height: 320,
+        x: 100,
+        y: 200,
+        createdBy: 'voice',
+      },
+      { now: () => now },
+    )
+    project = addLayer(project, parent, now)
+    const child = createLayer(
+      project,
+      {
+        id: 'tree-hat',
+        name: '帽子',
+        type: 'preset',
+        source: 'preset',
+        assetUrl: 'hat.svg',
+        parentLayerId: parent.id,
+        relation: 'attached-to:树',
+        width: 80,
+        height: 60,
+        x: 170,
+        y: 160,
+        createdBy: 'voice',
+      },
+      { now: () => now },
+    )
+    project = addLayer(project, child, now)
+    const ids = ['tree-copy', 'hat-copy'][Symbol.iterator]()
+
+    const result = executeCommand(
+      project,
+      {
+        schemaVersion: 1,
+        id: 'duplicate-tree',
+        action: 'duplicate',
+        target: { id: parent.id },
+        requiresGeneration: false,
+        confidence: 1,
+      },
+      now,
+      () => ids.next().value!,
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.project.layers).toHaveLength(4)
+    expect(
+      result.project.layers.find((layer) => layer.id === 'tree-copy'),
+    ).toMatchObject({
+      name: '树 副本',
+      assetUrl: 'tree.svg',
+      x: 128,
+      y: 228,
+    })
+    expect(
+      result.project.layers.find((layer) => layer.id === 'hat-copy'),
+    ).toMatchObject({
+      assetUrl: 'hat.svg',
+      parentLayerId: 'tree-copy',
+      x: 198,
+      y: 188,
+    })
+    expect(result.project.selectedLayerId).toBe('tree-copy')
+  })
+
   it('resolves an explicit name before the current selection', () => {
     const result = executeCommand(
       projectWithLayers(),

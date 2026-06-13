@@ -20,6 +20,7 @@ export const layerSchema = z.object({
   negativePrompt: z.string().max(2000).optional(),
   semanticDescription: z.string().max(2000).optional(),
   characterAssetId: z.string().min(1).optional(),
+  groupId: z.string().min(1).optional(),
   parentLayerId: z.string().min(1).optional(),
   relation: z.string().max(200).optional(),
   textContent: z.string().max(500).optional(),
@@ -114,8 +115,13 @@ export const commandActionSchema = z.enum([
   'select',
   'modify',
   'delete',
+  'duplicate',
+  'group',
+  'ungroup',
   'reorder',
   'rename',
+  'undo',
+  'redo',
   'save',
   'confirm',
   'cancel',
@@ -161,6 +167,7 @@ export const drawingCommandSchema = z.object({
   target: z
     .object({
       id: z.string().min(1).optional(),
+      ids: z.array(z.string().min(1)).min(2).max(20).optional(),
       name: z.string().trim().min(1).optional(),
       reference: z.enum(['selected', 'recent']).optional(),
       spatialHint: z

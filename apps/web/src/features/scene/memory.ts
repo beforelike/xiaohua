@@ -79,7 +79,7 @@ function inferLighting(project: Project) {
 }
 
 function relationSummary(project: Project) {
-  return project.layers
+  const layerRelations = project.layers
     .filter((layer) => layer.parentLayerId || layer.relation)
     .map((layer) => {
       const parent = project.layers.find(
@@ -106,6 +106,18 @@ function relationSummary(project: Project) {
         ? `${layer.name}关系：${layer.relation}`
         : layer.name
     })
+  const groups = new Map<string, string[]>()
+  for (const layer of project.layers) {
+    if (!layer.groupId) continue
+    groups.set(layer.groupId, [
+      ...(groups.get(layer.groupId) ?? []),
+      layer.name,
+    ])
+  }
+  const groupRelations = [...groups.values()]
+    .filter((names) => names.length > 1)
+    .map((names) => `${names.join('与')}属于同一组合`)
+  return [...layerRelations, ...groupRelations]
 }
 
 export function refreshProjectSceneMemory(project: Project): Project {

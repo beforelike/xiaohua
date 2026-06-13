@@ -55,10 +55,18 @@ export function LayerPanel({ project, execute }: LayerPanelProps) {
                     : layer.source === 'generated'
                       ? 'AI 生成'
                       : '预设素材'}
+                  {layer.groupId ? ' · 组合' : ''}
                 </small>
               </span>
             </button>
             <div className="layer-actions">
+              <button
+                type="button"
+                title="复制图层"
+                onClick={() => execute(command('duplicate', layer.id))}
+              >
+                ⧉
+              </button>
               <button
                 type="button"
                 title="上移一层"

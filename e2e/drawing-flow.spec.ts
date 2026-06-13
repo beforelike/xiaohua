@@ -122,6 +122,88 @@ test('recolors local SVG assets without regenerating the object', async ({
   )
 })
 
+test('duplicates, undoes, and redoes objects without image generation', async ({
+  page,
+}) => {
+  let generationRequests = 0
+  page.on('request', (request) => {
+    if (request.url().includes('/api/assets/generate')) {
+      generationRequests += 1
+    }
+  })
+  await page.goto('/')
+
+  const toolbox = page.getByLabel('素材工具箱')
+  await toolbox.getByRole('button', { name: '太阳' }).click()
+  const commandInput = page.getByPlaceholder('例如：把太阳变小一点并移到右上角')
+  const layerPanel = page.getByLabel('图层面板')
+
+  await commandInput.fill('复制太阳')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已复制太阳')).toBeVisible()
+  await expect(page.getByText('2 个图层')).toBeVisible()
+  await expect(
+    layerPanel.getByRole('button', { name: /太阳 副本/ }),
+  ).toBeVisible()
+  expect(generationRequests).toBe(0)
+
+  await commandInput.fill('撤销')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已撤销上一步操作')).toBeVisible()
+  await expect(page.getByText('1 个图层')).toBeVisible()
+
+  await commandInput.fill('重做')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已重做上一步操作')).toBeVisible()
+  await expect(page.getByText('2 个图层')).toBeVisible()
+  expect(generationRequests).toBe(0)
+})
+
+test('groups objects for coordinated movement and preserves the relation in export', async ({
+  page,
+}) => {
+  await page.goto('/')
+
+  const toolbox = page.getByLabel('素材工具箱')
+  await toolbox.getByRole('button', { name: '树' }).click()
+  await toolbox.getByRole('button', { name: '太阳' }).click()
+  const commandInput = page.getByPlaceholder('例如：把太阳变小一点并移到右上角')
+
+  await commandInput.fill('把树和太阳组合')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(
+    page.getByText(/已组合.*树.*太阳|已组合.*太阳.*树/),
+  ).toBeVisible()
+  await expect(page.getByLabel('作品记忆')).toContainText('属于同一组合')
+
+  await commandInput.fill('把太阳移到右边')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已更新太阳')).toBeVisible()
+
+  const downloads: Download[] = []
+  page.on('download', (download) => downloads.push(download))
+  await commandInput.fill('保存作品')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect.poll(() => downloads.length).toBe(2)
+  const projectDownload = downloads.find((download) =>
+    download.suggestedFilename().endsWith('.xiaohua.json'),
+  )
+  const projectPath = await projectDownload?.path()
+  const project = JSON.parse(await readFile(projectPath!, 'utf8')) as {
+    layers: Array<{ name: string; x: number; groupId?: string }>
+  }
+  const tree = project.layers.find((layer) => layer.name === '树')
+  const sun = project.layers.find((layer) => layer.name === '太阳')
+  expect(tree?.groupId).toBeTruthy()
+  expect(tree?.groupId).toBe(sun?.groupId)
+  expect(tree!.x).toBeGreaterThan(400)
+
+  await commandInput.fill('取消太阳的组合')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已取消对象组合')).toBeVisible()
+  await expect(page.getByLabel('作品记忆')).not.toContainText('属于同一组合')
+})
+
 test('adds a new referenced object instead of confusing it with the reference layer', async ({
   page,
 }) => {

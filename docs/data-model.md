@@ -43,6 +43,10 @@ interface Layer {
   type: LayerType;
   assetUrl?: string;
   prompt?: string;
+  semanticDescription?: string;
+  groupId?: string;
+  parentLayerId?: string;
+  relation?: string;
   source: "generated" | "preset" | "user";
   status: AssetStatus;
   x: number;
@@ -75,8 +79,13 @@ type CommandAction =
   | "select"
   | "modify"
   | "delete"
+  | "duplicate"
+  | "group"
+  | "ungroup"
   | "reorder"
   | "rename"
+  | "undo"
+  | "redo"
   | "save"
   | "confirm"
   | "cancel";
@@ -87,6 +96,7 @@ interface DrawingCommand {
   action: CommandAction;
   target?: {
     id?: string;
+    ids?: string[];
     name?: string;
     reference?: "selected" | "recent";
     spatialHint?: "left" | "center" | "right" | "top" | "bottom";

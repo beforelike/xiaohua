@@ -86,6 +86,16 @@ function targetFromText(
   return name ? { name } : undefined
 }
 
+function groupTargetFromText(
+  text: string,
+  context: ParseCommandRequest['context'],
+): DrawingCommand['target'] {
+  const ids = context.recentLayers
+    .filter((layer) => text.includes(layer.name))
+    .map((layer) => layer.id)
+  return ids.length >= 2 ? { ids } : undefined
+}
+
 function positionFromText(text: string): string | undefined {
   const positions: Array<[RegExp, string]> = [
     [/(右上|右上方|右上角)/, 'top-right'],
@@ -151,6 +161,37 @@ export function parseRuleCommand(
   }
 
   const target = targetFromText(text, request.context)
+  if (/^(?:撤销|撤回|回退|上一步|取消上一步)$/.test(text)) {
+    return drawingCommandSchema.parse({ ...base, action: 'undo' })
+  }
+  if (/^(?:重做|恢复|下一步|恢复上一步)$/.test(text)) {
+    return drawingCommandSchema.parse({ ...base, action: 'redo' })
+  }
+  if (/(?:复制|拷贝|克隆|再来一个|再放一个|再加一个|做个副本)/.test(text)) {
+    return drawingCommandSchema.parse({
+      ...base,
+      action: 'duplicate',
+      target:
+        target ??
+        (/再来一个|再放一个|再加一个/.test(text)
+          ? { reference: 'recent' }
+          : { reference: 'selected' }),
+    })
+  }
+  if (/(?:取消|解除|解散).{0,20}组合/.test(text)) {
+    return drawingCommandSchema.parse({
+      ...base,
+      action: 'ungroup',
+      target: target ?? { reference: 'selected' },
+    })
+  }
+  if (/(?:组合|编组|合为一组)/.test(text)) {
+    return drawingCommandSchema.parse({
+      ...base,
+      action: 'group',
+      target: groupTargetFromText(text, request.context),
+    })
+  }
   if (/(删除|删掉|移除)/.test(text)) {
     return drawingCommandSchema.parse({ ...base, action: 'delete', target })
   }

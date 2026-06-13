@@ -149,4 +149,70 @@ describe('projectStore', () => {
       '树位于中部右侧',
     )
   })
+
+  it('undoes and redoes project mutations while clearing redo after a new edit', () => {
+    const ids = ['sun', 'tree'][Symbol.iterator]()
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => ids.next().value!, now: () => second },
+    )
+
+    store.getState().addReadyLayer({
+      name: '太阳',
+      type: 'preset',
+      source: 'preset',
+      width: 180,
+      height: 180,
+      createdBy: 'voice',
+    })
+    store.getState().execute({
+      schemaVersion: 1,
+      id: 'move-sun',
+      action: 'modify',
+      target: { id: 'sun' },
+      properties: { position: 'top-right' },
+      requiresGeneration: false,
+      confidence: 1,
+    })
+    const movedX = store.getState().project.layers[0]!.x
+
+    expect(
+      store.getState().execute({
+        schemaVersion: 1,
+        id: 'undo',
+        action: 'undo',
+        requiresGeneration: false,
+        confidence: 1,
+      }).ok,
+    ).toBe(true)
+    expect(store.getState().project.layers[0]!.x).not.toBe(movedX)
+
+    expect(
+      store.getState().execute({
+        schemaVersion: 1,
+        id: 'redo',
+        action: 'redo',
+        requiresGeneration: false,
+        confidence: 1,
+      }).ok,
+    ).toBe(true)
+    expect(store.getState().project.layers[0]!.x).toBe(movedX)
+
+    store.getState().execute({
+      schemaVersion: 1,
+      id: 'undo-again',
+      action: 'undo',
+      requiresGeneration: false,
+      confidence: 1,
+    })
+    store.getState().addReadyLayer({
+      name: '树',
+      type: 'preset',
+      source: 'preset',
+      width: 220,
+      height: 320,
+      createdBy: 'voice',
+    })
+    expect(store.getState().redoStack).toHaveLength(0)
+  })
 })

@@ -64,10 +64,13 @@ const SYSTEM_PROMPT = `你是一个具有作品记忆和视觉导演能力的现
    - 前景对象必须完整入镜并四周留白，包含："entire object fully visible, full body in frame, generous empty margin, isolated object, solid white background, no background clutter, single subject"
    - 负向提示词：根据对象类型生成合适的负向词
 
-3. 对于非 create 命令（select/modify/delete/reorder/rename/save等），正常解析即可，不需要 objects 字段。
+3. 对于非 create 命令（select/modify/delete/duplicate/group/ungroup/reorder/rename/undo/redo/save等），正常解析即可，不需要 objects 字段。
    - 用户明确修改、重画、替换或补充已有对象时，必须使用 action="modify"，target 指向 context.recentLayers 中原图层的 id 或 name
    - "把树画成秋天的树"、"给树加上红叶"、"把它换成卡通风格"都是 modify，不得创建同名新对象或新图层
    - 只有用户明确要求增加独立的新画面元素时才使用 create
+   - “复制这棵树”“再来一个”“做个副本”使用 action="duplicate"，不得重新调用图片生成
+   - “把树和太阳组合”使用 action="group"，target.ids 填写相关图层 id；“取消组合”使用 action="ungroup"
+   - “撤销/上一步”使用 action="undo"；“重做/恢复”使用 action="redo"，均不需要 target
    - 修改对象内容时，prompt 必须写成“修改后的完整对象描述”，结合该图层旧 prompt 和用户的新要求，不能只复述“把它改成……”。
 
 4. 文字能力：
@@ -84,7 +87,7 @@ const SYSTEM_PROMPT = `你是一个具有作品记忆和视觉导演能力的现
 
 6. JSON 格式规则：
    - schemaVersion 必须为 1
-   - action 只能是: create/select/modify/delete/reorder/rename/save/confirm/cancel
+   - action 只能是: create/select/modify/delete/duplicate/group/ungroup/reorder/rename/undo/redo/save/confirm/cancel
    - confidence 为 0 到 1
    - 当 action="create" 且有多个对象时，必须填写 objects 数组
    - requiresGeneration: 创建时为 true

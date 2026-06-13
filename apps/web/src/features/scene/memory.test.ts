@@ -116,4 +116,45 @@ describe('scene memory', () => {
 
     expect(project.memory.sceneSummary).toContain('小鸟在树右侧')
   })
+
+  it('keeps grouped object relationships in scene memory', () => {
+    const base = createProject('memory-test', {
+      id: () => 'project',
+      now,
+    })
+    const tree = createLayer(
+      base,
+      {
+        id: 'tree',
+        name: '树',
+        type: 'preset',
+        source: 'preset',
+        groupId: 'group-1',
+        width: 220,
+        height: 360,
+        createdBy: 'voice',
+      },
+      { now },
+    )
+    const sun = createLayer(
+      { ...base, layers: [tree] },
+      {
+        id: 'sun',
+        name: '太阳',
+        type: 'preset',
+        source: 'preset',
+        groupId: 'group-1',
+        width: 180,
+        height: 180,
+        createdBy: 'voice',
+      },
+      { now },
+    )
+
+    const project = refreshProjectSceneMemory(
+      addLayer(addLayer(base, tree, now()), sun, now()),
+    )
+
+    expect(project.memory.sceneSummary).toContain('树与太阳属于同一组合')
+  })
 })

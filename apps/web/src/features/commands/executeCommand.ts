@@ -27,26 +27,36 @@ function replaceLayer(
   const rotationDelta = previousLayer
     ? nextLayer.rotation - previousLayer.rotation
     : 0
+  const groupedLayerIds = new Set(
+    previousLayer?.groupId
+      ? project.layers
+          .filter((layer) => layer.groupId === previousLayer.groupId)
+          .map((layer) => layer.id)
+      : [nextLayer.id],
+  )
   return {
     ...project,
-    layers: project.layers.map((layer) =>
-      layer.id === nextLayer.id
-        ? nextLayer
-        : previousLayer && layer.parentLayerId === nextLayer.id
-          ? constrainLayer(
-              {
-                ...layer,
-                x: nextLayer.x + (layer.x - previousLayer.x) * scaleX,
-                y: nextLayer.y + (layer.y - previousLayer.y) * scaleY,
-                width: layer.width * scaleX,
-                height: layer.height * scaleY,
-                rotation: layer.rotation + rotationDelta,
-                updatedAt: now,
-              },
-              project,
-            )
-          : layer,
-    ),
+    layers: project.layers.map((layer) => {
+      if (layer.id === nextLayer.id) return nextLayer
+      const movesWithTarget =
+        previousLayer &&
+        (layer.parentLayerId === nextLayer.id ||
+          (previousLayer.groupId && layer.groupId === previousLayer.groupId) ||
+          (layer.parentLayerId && groupedLayerIds.has(layer.parentLayerId)))
+      if (!movesWithTarget || !previousLayer) return layer
+      return constrainLayer(
+        {
+          ...layer,
+          x: nextLayer.x + (layer.x - previousLayer.x) * scaleX,
+          y: nextLayer.y + (layer.y - previousLayer.y) * scaleY,
+          width: layer.width * scaleX,
+          height: layer.height * scaleY,
+          rotation: layer.rotation + rotationDelta,
+          updatedAt: now,
+        },
+        project,
+      )
+    }),
     selectedLayerId: nextLayer.id,
     recentLayerIds: [
       nextLayer.id,
@@ -118,6 +128,7 @@ export function executeCommand(
   project: Project,
   command: DrawingCommand,
   now = new Date().toISOString(),
+  id: () => string = () => crypto.randomUUID(),
 ): CommandResult {
   if (command.action === 'save') {
     return {
@@ -131,11 +142,58 @@ export function executeCommand(
     }
   }
 
-  if (['create', 'confirm', 'cancel'].includes(command.action)) {
+  if (
+    ['create', 'confirm', 'cancel', 'undo', 'redo'].includes(command.action)
+  ) {
     return {
       ok: false,
       code: 'UNSUPPORTED_COMMAND',
       message: '该命令需要由对应流程处理',
+    }
+  }
+
+  if (command.action === 'group') {
+    const groupLayerIds = [...new Set(command.target?.ids ?? [])]
+    if (groupLayerIds.length < 2) {
+      return {
+        ok: false,
+        code: 'UNSUPPORTED_COMMAND',
+        message: '请至少指定两个需要组合的对象',
+      }
+    }
+    const groupLayers = project.layers.filter((layer) =>
+      groupLayerIds.includes(layer.id),
+    )
+    if (groupLayers.length !== groupLayerIds.length) {
+      return {
+        ok: false,
+        code: 'UNSUPPORTED_COMMAND',
+        message: '部分组合对象不存在',
+      }
+    }
+    if (groupLayers.some((layer) => layer.locked)) {
+      return { ok: false, code: 'LOCKED_LAYER', message: '组合中包含锁定图层' }
+    }
+    const groupId = id()
+    return {
+      ok: true,
+      project: {
+        ...project,
+        layers: project.layers.map((layer) =>
+          groupLayerIds.includes(layer.id)
+            ? { ...layer, groupId, updatedAt: now }
+            : layer,
+        ),
+        selectedLayerId: groupLayerIds[0] ?? null,
+        recentLayerIds: [
+          ...groupLayerIds,
+          ...project.recentLayerIds.filter(
+            (layerId) => !groupLayerIds.includes(layerId),
+          ),
+        ].slice(0, 20),
+        updatedAt: now,
+      },
+      message: `已组合${groupLayers.map((layer) => layer.name).join('和')}`,
     }
   }
 
@@ -160,6 +218,32 @@ export function executeCommand(
         updatedAt: now,
       },
       message: `已选择${target.name}`,
+    }
+  }
+
+  if (command.action === 'ungroup') {
+    if (!target.groupId) {
+      return {
+        ok: false,
+        code: 'UNSUPPORTED_COMMAND',
+        message: `${target.name}当前不在组合中`,
+      }
+    }
+    const groupId = target.groupId
+    return {
+      ok: true,
+      project: {
+        ...project,
+        layers: project.layers.map((layer) => {
+          if (layer.groupId !== groupId) return layer
+          const ungrouped = { ...layer }
+          delete ungrouped.groupId
+          return { ...ungrouped, updatedAt: now }
+        }),
+        selectedLayerId: target.id,
+        updatedAt: now,
+      },
+      message: '已取消对象组合',
     }
   }
 
@@ -189,6 +273,48 @@ export function executeCommand(
         updatedAt: now,
       },
       message: `已删除${target.name}`,
+    }
+  }
+
+  if (command.action === 'duplicate') {
+    const children = project.layers.filter(
+      (layer) => layer.parentLayerId === target.id,
+    )
+    const targetId = id()
+    const offset = 28
+    const duplicateLayer = (layer: Layer, nextId: string): Layer => {
+      const copy = {
+        ...layer,
+        id: nextId,
+        name: layer.id === target.id ? `${layer.name} 副本` : layer.name,
+        x: layer.x + offset,
+        y: layer.y + offset,
+        zIndex: project.layers.length,
+        createdAt: now,
+        updatedAt: now,
+        ...(layer.parentLayerId ? { parentLayerId: targetId } : {}),
+      }
+      delete copy.groupId
+      return constrainLayer(copy, project)
+    }
+    const copies = [
+      duplicateLayer(target, targetId),
+      ...children.map((layer) => duplicateLayer(layer, id())),
+    ]
+    const layers = normalizeLayers([...project.layers, ...copies])
+    return {
+      ok: true,
+      project: {
+        ...project,
+        layers,
+        selectedLayerId: targetId,
+        recentLayerIds: [
+          targetId,
+          ...project.recentLayerIds.filter((layerId) => layerId !== targetId),
+        ].slice(0, 20),
+        updatedAt: now,
+      },
+      message: `已复制${target.name}`,
     }
   }
 
