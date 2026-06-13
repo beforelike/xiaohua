@@ -49,8 +49,11 @@ const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
   IMAGE_PROVIDER: z
-    .enum(['stable-diffusion-webui', 'mock'])
+    .enum(['gemini-image', 'stable-diffusion-webui', 'mock'])
     .default('stable-diffusion-webui'),
+  GEMINI_IMAGE_BASE_URL: z.url().default('http://127.0.0.1:8045/v1'),
+  GEMINI_IMAGE_MODEL: z.string().min(1).default('gemini-3-pro-image'),
+  GEMINI_IMAGE_API_KEY: z.string().min(1).optional(),
   SD_WEBUI_BASE_URL: z.url().default('http://127.0.0.1:7860'),
   SD_STEPS: z.coerce.number().int().min(1).max(150).default(28),
   SD_CFG_SCALE: z.coerce.number().min(1).max(30).default(7),

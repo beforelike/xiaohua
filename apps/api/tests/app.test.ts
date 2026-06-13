@@ -229,8 +229,37 @@ describe('API application', () => {
     expect(body.command.style).toContain('storybook')
   })
 
-  it('uses the local fast path for a common single object', async () => {
-    const fetcher = vi.fn<typeof fetch>()
+  it('enriches a short single-object request when the LLM is available', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  style:
+                    'warm contemporary storybook illustration, soft side light',
+                  objects: [
+                    {
+                      name: '小猫',
+                      prompt:
+                        'a curious orange kitten sitting upright, expressive green eyes, soft striped fur, complete body visible',
+                      negativePrompt:
+                        'multiple cats, background, frame, text, watermark',
+                      background: 'transparent',
+                      isBackground: false,
+                      position: 'center',
+                      size: 'medium',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
     vi.stubGlobal('fetch', fetcher)
     const llmConfig = getConfig({
       HOST: '127.0.0.1',
@@ -258,17 +287,17 @@ describe('API application', () => {
       })
 
     expect(response.status).toBe(200)
-    expect(fetcher).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledOnce()
     const body = z
       .object({ command: drawingCommandSchema })
       .parse(response.body)
-    expect(body.command.objects).toEqual([
-      expect.objectContaining({
-        name: '小猫',
-        background: 'transparent',
-        isBackground: false,
-      }),
-    ])
+    expect(body.command.objects).toHaveLength(1)
+    expect(body.command.objects?.[0]).toMatchObject({
+      name: '小猫',
+      background: 'transparent',
+      isBackground: false,
+    })
+    expect(body.command.objects?.[0]?.prompt).toContain('curious orange kitten')
   })
 
   it('falls back to a configured LLM when rules do not understand the command', async () => {
@@ -282,7 +311,7 @@ describe('API application', () => {
                   schemaVersion: 1,
                   id: 'llm-command',
                   action: 'modify',
-                  target: { name: '奔跑的马' },
+                  target: '奔跑的马',
                   properties: { position: 'top-right' },
                   requiresGeneration: false,
                   confidence: 0.96,
@@ -327,7 +356,7 @@ describe('API application', () => {
       .parse(response.body)
     expect(body.command).toMatchObject({
       action: 'modify',
-      target: { name: '奔跑的马' },
+      target: { id: 'horse', name: '奔跑的马' },
       properties: { position: 'top-right' },
     })
   })

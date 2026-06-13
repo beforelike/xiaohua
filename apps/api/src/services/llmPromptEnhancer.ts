@@ -42,6 +42,8 @@ export interface EnhancedObject {
 export interface EnhanceResult {
   /** LLM 为当前场景选择的统一英文画风 */
   style: string
+  creativeDirection?: string | undefined
+  sceneSummary?: string | undefined
   /** 分离出的对象列表 */
   objects: EnhancedObject[]
 }
@@ -52,6 +54,8 @@ interface ChatCompletion {
 
 const enhanceResultSchema = z.object({
   style: z.string().trim().min(1).max(500),
+  creativeDirection: z.string().max(1000).optional(),
+  sceneSummary: z.string().max(2000).optional(),
   objects: z.array(
     z.object({
       name: z.string(),
@@ -183,6 +187,8 @@ function coordinateObjects(
   const requestedCount = requestedSubjectCount(userPrompt)
   return {
     style: result.style,
+    creativeDirection: result.creativeDirection,
+    sceneSummary: result.sceneSummary,
     objects: requestedObjects.map((object) => {
       if (object.isBackground) {
         return {
@@ -280,9 +286,15 @@ const SYSTEM_PROMPT = `你是一个专业的 Stable Diffusion 提示词工程师
    - 背景层负向提示词必须排除所有前景主体类别，避免背景提前生成重复主体
    - 根据对象特性添加特定负向词
 
-5. **输出格式**：严格输出 JSON，格式如下：
+5. **作品理解**：
+   - creativeDirection 用中文概括本作品的媒介、情绪、叙事重点、镜头、色彩与光线。
+   - sceneSummary 用中文准确描述执行本次请求后的完整画面、对象关系与留白，不得添加用户未要求的对象。
+
+6. **输出格式**：严格输出 JSON，格式如下：
 {
   "style": "detailed english style prompt for the whole scene",
+  "creativeDirection": "中文创作方向",
+  "sceneSummary": "中文完整画面摘要",
   "objects": [
     {
       "name": "对象中文名",
@@ -329,9 +341,14 @@ export async function enhancePrompt(
   }
 
   const memory = context.recentLayers.map((layer) => ({
+    id: layer.id,
     name: layer.name,
     type: layer.type,
-    prompt: layer.prompt,
+    description:
+      layer.semanticDescription ??
+      layer.prompt ??
+      layer.textContent ??
+      layer.name,
     position:
       layer.x === undefined
         ? undefined
@@ -341,12 +358,17 @@ export async function enhancePrompt(
             width: layer.width,
             height: layer.height,
           },
+    rotation: layer.rotation,
+    zIndex: layer.zIndex,
   }))
   const userMessage = `用户输入：${userPrompt}
 当前项目画风：${globalStyle || '尚未确定，请根据用户题材自动选择'}
-当前项目已有图层记忆：${JSON.stringify(memory)}
+当前作品创作方向：${context.creativeDirection || '尚未建立'}
+当前完整场景摘要：${context.sceneSummary || '尚未建立'}
+当前画布：${JSON.stringify(context.canvas ?? {})}
+当前项目全部图层记忆（从高层到低层）：${JSON.stringify(memory)}
 
-请先建立“背景实体清单”和“前景主体清单”，确保两者没有重复实体。再逐项保留用户指定的数量、动作、姿态、朝向和空间关系，使用共享镜头与光照生成可合成的图层。已有图层仅用于保持风格与上下文一致，不要重复创建用户未要求新增的对象。`
+请像视觉导演一样先判断作品的叙事重点、构图平衡、可用留白、透视、色彩和光线。再建立“背景实体清单”和“前景主体清单”，确保两者没有重复实体。逐项保留用户指定的数量、动作、姿态、朝向和空间关系，使用共享镜头与光照生成可合成的图层。已有图层用于保持角色身份、风格和上下文一致，不要重复创建用户未要求新增的对象。`
 
   const response = await fetcher(
     `${config.LLM_BASE_URL.replace(/\/$/, '')}/chat/completions`,
@@ -387,30 +409,52 @@ export async function enhanceSinglePrompt(
   userPrompt: string,
   background: 'transparent' | 'opaque',
   globalStyle: string,
+  previousPrompt: string,
+  sceneContext: string,
   config: AppConfig,
   fetcher: typeof fetch = fetch,
-): Promise<{ prompt: string; negativePrompt: string }> {
+): Promise<{
+  prompt: string
+  negativePrompt: string
+  identityConstraints: string
+  preserveColors: boolean
+  preservePose: boolean
+}> {
   if (!config.LLM_BASE_URL || !config.LLM_MODEL || !config.LLM_API_KEY) {
     throw new Error('LLM_NOT_CONFIGURED')
   }
 
   const singlePromptSystemMessage = `你是一个专业的 Stable Diffusion 提示词工程师。
-根据用户的描述，为单个对象生成高质量的英文 SD 提示词。
+根据用户的描述，为已有对象生成“修改后的完整对象定义”，不是只翻译用户命令。
 
 规则：
 - prompt 只描述对象内容、构图、外观、颜色、材质和局部光照
+- 必须继承旧对象中未被用户明确修改的身份、颜色、材质、配饰和形态特征
+- 新要求与旧描述冲突时只覆盖冲突部分，其余特征保持不变
+- 结合当前完整画面的对象关系、光线方向、视角、色彩和叙事，让修改后的对象自然融入作品
 - 必须忠实保留用户描述中的动作、姿态、朝向和数量，不得改成静态或其他动作
 - 不要重复全局画风，也不要添加 masterpiece、best quality 等通用质量词；系统会统一组合
 - ${background === 'transparent' ? '这是前景对象，提示词必须包含：entire object fully visible, full body in frame, generous empty margin, isolated object, solid white background, no background, single subject' : '这是背景/场景层，生成完整的场景描述'}
 - 生成合适的英文负向提示词
 - 内容细节需与全局画风协调，但不要复制全局画风文本
 
+- identityConstraints 列出必须保持不变的物种、脸部、体型、主色、花纹、材质和已有配饰
+- preserveColors：只有用户明确要求改变主体主色、毛色或整体配色时才为 false；添加局部配饰颜色不算改变主体主色
+- preservePose：只有用户明确要求改变动作、姿势、朝向或镜头时才为 false；添加配饰、改材质或局部细节时为 true
+
 输出 JSON 格式：
-{ "prompt": "english prompt", "negativePrompt": "english negative prompt" }
+{ "prompt": "english prompt", "negativePrompt": "english negative prompt", "identityConstraints": "immutable identity features", "preserveColors": true, "preservePose": true }
 
 只输出 JSON，不要输出其他内容。`
 
-  const userMessage = `对象名称：${objectName}\n用户描述：${userPrompt}\n背景类型：${background}\n全局画风：${globalStyle}`
+  const userMessage = `对象名称：${objectName}
+旧对象完整描述：${previousPrompt || objectName}
+用户本次修改：${userPrompt}
+背景类型：${background}
+全局画风：${globalStyle}
+当前作品上下文：${sceneContext || '暂无其他画面信息'}
+
+请输出修改后的完整对象 prompt，并用 negativePrompt 排除残留旧形态、重复主体、边框、文字和无关背景。`
 
   const response = await fetcher(
     `${config.LLM_BASE_URL.replace(/\/$/, '')}/chat/completions`,
@@ -442,6 +486,9 @@ export async function enhanceSinglePrompt(
     .object({
       prompt: z.string(),
       negativePrompt: z.string(),
+      identityConstraints: z.string().default(''),
+      preserveColors: z.boolean().default(true),
+      preservePose: z.boolean().default(true),
     })
     .parse(JSON.parse(content))
 

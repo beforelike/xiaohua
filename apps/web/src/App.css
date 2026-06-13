@@ -125,10 +125,18 @@
 }
 
 .toolbox,
-.layer-panel {
+.layer-panel,
+.memory-panel {
   align-self: stretch;
   border: 1px solid var(--line);
   background: rgba(255, 253, 247, 0.62);
+}
+
+.right-sidebar {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
 }
 
 .panel-heading {
@@ -196,6 +204,52 @@
   color: var(--muted);
   font-size: 11px;
   line-height: 1.75;
+}
+
+.memory-content {
+  padding: 14px;
+}
+
+.memory-content section + section,
+.memory-content .memory-meta + section {
+  margin-top: 13px;
+}
+
+.memory-content strong {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--display-font);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.memory-content p,
+.memory-content li {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.memory-meta {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memory-meta span {
+  padding: 4px 7px;
+  border: 1px solid rgba(43, 41, 35, 0.14);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(237, 232, 220, 0.52);
+  font-size: 10px;
+}
+
+.memory-content ul {
+  margin: 0;
+  padding-left: 16px;
 }
 
 .canvas-workspace {
@@ -461,8 +515,11 @@
     grid-template-columns: 150px minmax(420px, 1fr);
   }
 
-  .layer-panel {
+  .right-sidebar {
     grid-column: 1 / -1;
+  }
+
+  .layer-panel {
     min-height: 180px;
   }
 
@@ -502,7 +559,7 @@
     order: 1;
   }
 
-  .layer-panel {
+  .right-sidebar {
     order: 3;
   }
 

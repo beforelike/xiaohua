@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
@@ -11,7 +14,16 @@ interface StableDiffusionResponse {
   images?: string[]
 }
 
-const PROMPT_PIPELINE_VERSION = 7
+interface GeminiImageResponse {
+  choices?: Array<{
+    message?: {
+      content?: unknown
+      images?: unknown
+    }
+  }>
+}
+
+const PROMPT_PIPELINE_VERSION = 11
 const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
 
@@ -44,6 +56,7 @@ function assetId(request: GenerateAssetRequest, config: AppConfig) {
     .update(
       JSON.stringify({
         provider: config.IMAGE_PROVIDER,
+        geminiModel: config.GEMINI_IMAGE_MODEL,
         promptPipelineVersion: PROMPT_PIPELINE_VERSION,
         commandId: request.commandId,
         prompt: request.prompt,
@@ -56,6 +69,16 @@ function assetId(request: GenerateAssetRequest, config: AppConfig) {
         generationMode,
         referenceAssetId: request.referenceAssetId ?? '',
         referenceWeight,
+        sceneContext: request.sceneContext ?? '',
+        identityConstraints: request.identityConstraints ?? '',
+        preserveColors: request.preserveColors ?? false,
+        preservePose: request.preservePose ?? false,
+        sceneImageFingerprint: request.sceneImageDataUrl
+          ? createHash('sha256')
+              .update(request.sceneImageDataUrl)
+              .digest('hex')
+              .slice(0, 16)
+          : '',
         steps: config.SD_STEPS,
         cfgScale: config.SD_CFG_SCALE,
         sampler: config.SD_SAMPLER,
@@ -70,6 +93,59 @@ function fallbackSvg(request: GenerateAssetRequest) {
   const width = String(request.width)
   const height = String(request.height)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" rx="48" fill="#f4f0e6"/><circle cx="50%" cy="42%" r="24%" fill="#e0a44a"/><text x="50%" y="82%" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#2b2923">${label}</text></svg>`
+}
+
+function requestedColor(prompt: string) {
+  if (/红|red/i.test(prompt)) return '#dc2626'
+  if (/橙|orange/i.test(prompt)) return '#f97316'
+  if (/黄|金|yellow|gold/i.test(prompt)) return '#eab308'
+  if (/绿|green/i.test(prompt)) return '#16a34a'
+  if (/蓝|blue/i.test(prompt)) return '#2563eb'
+  if (/紫|purple/i.test(prompt)) return '#9333ea'
+  if (/粉|pink/i.test(prompt)) return '#ec4899'
+  if (/棕|brown/i.test(prompt)) return '#92400e'
+  return null
+}
+
+function localVectorPresetSvg(request: GenerateAssetRequest) {
+  if (request.background !== 'transparent') return null
+  const prompt = request.prompt.toLowerCase()
+  const width = String(request.width)
+  const height = String(request.height)
+  const color = requestedColor(request.prompt)
+  const svg = (content: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 512 512">${content}</svg>`
+
+  if (/太阳|阳光|sun/.test(prompt)) {
+    const fill = color ?? '#f59e0b'
+    return svg(
+      `<g fill="none" stroke="${fill}" stroke-linecap="round" stroke-width="28"><path d="M256 42v58M256 412v58M42 256h58M412 256h58M105 105l42 42M365 365l42 42M407 105l-42 42M147 365l-42 42"/></g><circle cx="256" cy="256" r="116" fill="${fill}"/><circle cx="218" cy="236" r="13" fill="#4a2f17"/><circle cx="294" cy="236" r="13" fill="#4a2f17"/><path d="M215 286q41 38 82 0" fill="none" stroke="#4a2f17" stroke-linecap="round" stroke-width="16"/>`,
+    )
+  }
+  if (/树|tree/.test(prompt)) {
+    const leaf = color ?? '#4f7f45'
+    return svg(
+      `<path d="M222 245h68l32 225H190Z" fill="#8b5e34"/><circle cx="256" cy="150" r="104" fill="${leaf}"/><circle cx="162" cy="206" r="70" fill="#6f9b62"/><circle cx="350" cy="210" r="74" fill="#7faa70"/><circle cx="256" cy="238" r="88" fill="#5f8f55"/>`,
+    )
+  }
+  if (/云|cloud/.test(prompt)) {
+    return svg(
+      '<path d="M116 382a84 84 0 0 1 18-166 116 116 0 0 1 220-18 92 92 0 1 1 70 184Z" fill="#fffdf7" stroke="#d8d3c6" stroke-width="14"/>',
+    )
+  }
+  if (/花|flower/.test(prompt)) {
+    const petal = color ?? '#f472b6'
+    return svg(
+      `<path d="M256 282v176" stroke="#3f7f46" stroke-linecap="round" stroke-width="24"/><path d="M256 350c-54-24-84-62-86-112 54 2 92 31 116 86" fill="#7fbf6f"/><g fill="${petal}"><ellipse cx="256" cy="154" rx="50" ry="88"/><ellipse cx="256" cy="258" rx="50" ry="88"/><ellipse cx="204" cy="206" rx="88" ry="50"/><ellipse cx="308" cy="206" rx="88" ry="50"/></g><circle cx="256" cy="206" r="44" fill="#facc15"/>`,
+    )
+  }
+  if (/苹果|apple/.test(prompt)) {
+    const fill = color ?? '#dc2626'
+    return svg(
+      `<path d="M274 118c23-50 66-62 102-62-8 48-42 78-92 84Z" fill="#4f9b45"/><path d="M248 140c-70-42-154 13-154 123 0 98 65 190 138 190 24 0 39-13 58-13s35 13 58 13c73 0 138-92 138-190 0-110-84-165-154-123-27 16-57 16-84 0Z" fill="${fill}"/><path d="M312 72c-34 24-50 54-50 90" fill="none" stroke="#71451f" stroke-linecap="round" stroke-width="18"/>`,
+    )
+  }
+  return null
 }
 
 export function buildPrompt(
@@ -205,6 +281,261 @@ export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
     .toBuffer()
 }
 
+function foregroundProcessorPath() {
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(moduleDirectory, '../../scripts/process_foreground.py'),
+    path.resolve(moduleDirectory, '../scripts/process_foreground.py'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+export async function removeForegroundWithOpenCv(
+  input: Buffer,
+  options: {
+    referencePath?: string
+    preserveColors?: boolean
+    preservePose?: boolean
+  } = {},
+): Promise<Buffer | null> {
+  if (process.env.NODE_ENV === 'test' && !process.env.IMAGE_PROCESSOR_PYTHON) {
+    return null
+  }
+  const script = foregroundProcessorPath()
+  if (!script) return null
+
+  return await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.env.IMAGE_PROCESSOR_PYTHON ?? 'python',
+      [
+        script,
+        ...(options.referencePath &&
+        (options.preserveColors || options.preservePose)
+          ? [
+              '--reference',
+              options.referencePath,
+              ...(options.preserveColors ? ['--preserve-colors'] : []),
+              ...(options.preservePose ? ['--preserve-shape'] : []),
+            ]
+          : []),
+      ],
+      {
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    )
+    const output: Buffer[] = []
+    const errors: Buffer[] = []
+    let settled = false
+    const finish = (value: Buffer | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      resolve(value)
+    }
+    const timeout = setTimeout(() => {
+      child.kill()
+      finish(null)
+    }, 45_000)
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      output.push(chunk)
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      errors.push(chunk)
+    })
+    child.on('error', () => {
+      finish(null)
+    })
+    child.on('close', (code: number | null) => {
+      if (code === 0 && output.length > 0) {
+        finish(Buffer.concat(output))
+        return
+      }
+      if (code === 2) {
+        const reason = Buffer.concat(errors).toString('utf8').slice(0, 200)
+        reject(new Error(`FOREGROUND_PROCESSING_REJECTED:${reason}`))
+        return
+      }
+      finish(null)
+    })
+    child.stdin.on('error', () => {
+      finish(null)
+    })
+    child.stdin.end(input)
+  })
+}
+
+function geminiSize(width: number, height: number) {
+  if (width > height * 1.2) return '1280x720'
+  if (height > width * 1.2) return '720x1280'
+  return '1024x1024'
+}
+
+function collectImageCandidates(value: unknown, output: string[]) {
+  if (typeof value === 'string') {
+    output.push(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectImageCandidates(item, output)
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  for (const [key, item] of Object.entries(value)) {
+    if (
+      ['url', 'image_url', 'b64_json', 'data', 'content'].includes(
+        key.toLocaleLowerCase(),
+      )
+    ) {
+      collectImageCandidates(item, output)
+    }
+  }
+}
+
+async function decodeGeminiImage(
+  payload: GeminiImageResponse,
+  fetcher: typeof fetch,
+  apiKey: string,
+) {
+  const candidates: string[] = []
+  const message = payload.choices?.[0]?.message
+  collectImageCandidates(message?.images, candidates)
+  collectImageCandidates(message?.content, candidates)
+
+  for (const candidate of candidates) {
+    const dataUri = candidate.match(
+      /data:image\/(?:png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\s]+)/,
+    )
+    if (dataUri?.[1]) {
+      return Buffer.from(dataUri[1].replaceAll(/\s/g, ''), 'base64')
+    }
+    const compactCandidate = candidate.replaceAll(/\s/g, '')
+    if (
+      compactCandidate.length > 1_000 &&
+      /^[A-Za-z0-9+/]+={0,2}$/.test(compactCandidate)
+    ) {
+      return Buffer.from(compactCandidate, 'base64')
+    }
+    const markdownUrl = candidate.match(/!\[[^\]]*\]\((https?:\/\/[^)]+)\)/)
+    const imageUrl =
+      markdownUrl?.[1] ??
+      (candidate.startsWith('http://') || candidate.startsWith('https://')
+        ? candidate
+        : null)
+    if (imageUrl) {
+      const response = await fetcher(imageUrl, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (response.ok) return Buffer.from(await response.arrayBuffer())
+    }
+  }
+  throw new Error('GEMINI_EMPTY_IMAGE')
+}
+
+async function generateWithGemini(
+  request: GenerateAssetRequest,
+  config: AppConfig,
+  fetcher: typeof fetch,
+  cacheDirectory: string,
+  includeVisualReferences = true,
+) {
+  if (!config.GEMINI_IMAGE_API_KEY) throw new Error('GEMINI_NOT_CONFIGURED')
+  const apiKey = config.GEMINI_IMAGE_API_KEY
+  const foregroundInstructions =
+    request.background === 'transparent'
+      ? 'Render only the requested foreground subject as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.'
+      : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
+  const prompt = [
+    'You are the visual director for an editable layered artwork.',
+    `Artwork direction: ${request.style ?? config.SD_STYLE_PROMPT}`,
+    request.sceneContext
+      ? `Current artwork memory and composition: ${request.sceneContext}`
+      : undefined,
+    `Requested layer: ${request.prompt}`,
+    foregroundInstructions,
+    request.referenceAssetId && includeVisualReferences
+      ? 'The first reference image is the existing version of this same layer. Preserve every identity and design feature not explicitly changed by the request.'
+      : undefined,
+    request.referenceAssetId && request.preservePose
+      ? 'This is a minimal edit, not a redesign. Preserve the exact single-subject composition, pose, silhouette, scale, face, markings, and camera angle; change only the explicitly requested detail.'
+      : undefined,
+    request.identityConstraints
+      ? `Immutable identity constraints: ${request.identityConstraints}. These are hard requirements, not suggestions.`
+      : undefined,
+    request.sceneImageDataUrl
+      ? 'The final reference image is the current full canvas. Match its camera, perspective, palette, lighting, rendering language, and available spatial role. Do not copy other objects into this isolated layer.'
+      : undefined,
+    request.negativePrompt
+      ? `Strictly avoid: ${request.negativePrompt}.`
+      : undefined,
+    request.background === 'transparent'
+      ? 'Show exactly one depiction of the requested subject. Never repeat it. No alternate pose, second view, turnaround, character sheet, contact sheet, grid, collage, inset, comparison, or duplicated body.'
+      : undefined,
+    'Return one polished production-ready image, not a draft, concept sheet, comparison, collage, frame, badge, or annotated design.',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const imageReferences: string[] = []
+  if (includeVisualReferences && request.referenceAssetId) {
+    try {
+      const reference = await readFile(
+        path.join(cacheDirectory, `${request.referenceAssetId}.png`),
+      )
+      imageReferences.push(
+        `data:image/png;base64,${reference.toString('base64')}`,
+      )
+    } catch {
+      // The text memory still allows regeneration when an old cache entry is gone.
+    }
+  }
+  if (includeVisualReferences && request.sceneImageDataUrl) {
+    imageReferences.push(request.sceneImageDataUrl)
+  }
+  const multimodalContent = [
+    { type: 'text', text: prompt },
+    ...imageReferences.map((url) => ({
+      type: 'image_url',
+      image_url: { url },
+    })),
+  ]
+  const endpoint = `${config.GEMINI_IMAGE_BASE_URL.replace(/\/$/, '')}/chat/completions`
+  const requestImage = (includeReferences: boolean) =>
+    fetcher(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.GEMINI_IMAGE_MODEL,
+        size: geminiSize(request.width, request.height),
+        messages: [
+          {
+            role: 'user',
+            content:
+              includeReferences && imageReferences.length > 0
+                ? multimodalContent
+                : prompt,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(180_000),
+    })
+  let response = await requestImage(true)
+  if (!response.ok && imageReferences.length > 0) {
+    response = await requestImage(false)
+  }
+  if (!response.ok) throw new Error(`GEMINI_HTTP_${String(response.status)}`)
+  return decodeGeminiImage(
+    (await response.json()) as GeminiImageResponse,
+    fetcher,
+    apiKey,
+  )
+}
+
 export async function validateTransparentCutout(input: Buffer) {
   const { data, info } = await sharp(input)
     .ensureAlpha()
@@ -227,6 +558,69 @@ export async function validateTransparentCutout(input: Buffer) {
   const opaqueBorderRatio = opaqueBorderPixels / borderPixels
   if (opaqueRatio > 0.78 || opaqueBorderRatio > 0.15) {
     throw new Error('FOREGROUND_BACKGROUND_NOT_REMOVED')
+  }
+}
+
+function asksForColoredAsset(text: string) {
+  return /#[0-9a-f]{3,8}\b|\b(?:red|orange|yellow|green|blue|purple|pink|brown|gold|colorful|full-?color)\b|红|橙|黄|绿|蓝|紫|粉|棕|金|彩色|全彩/i.test(
+    text,
+  )
+}
+
+export async function validateForegroundAssetQuality(
+  input: Buffer,
+  request: Pick<GenerateAssetRequest, 'prompt' | 'style'>,
+) {
+  const { data, info } = await sharp(input)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  let opaquePixels = 0
+  let nearBlackPixels = 0
+  let colorfulPixels = 0
+  let nearWhitePixels = 0
+
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const offset = (y * info.width + x) * info.channels
+      const red = data[offset] ?? 255
+      const green = data[offset + 1] ?? 255
+      const blue = data[offset + 2] ?? 255
+      const alpha = data[offset + 3] ?? 255
+      if (alpha <= 32) continue
+
+      opaquePixels += 1
+      const maxChannel = Math.max(red, green, blue)
+      const minChannel = Math.min(red, green, blue)
+      const chroma = maxChannel - minChannel
+      const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+      if (luminance < 55) nearBlackPixels += 1
+      if (luminance > 235 && chroma < 18) nearWhitePixels += 1
+      if (chroma > 45 && luminance > 45 && luminance < 245) {
+        colorfulPixels += 1
+      }
+    }
+  }
+
+  const totalPixels = info.width * info.height
+  const opaqueRatio = opaquePixels / totalPixels
+  const nearBlackRatio = opaquePixels === 0 ? 0 : nearBlackPixels / opaquePixels
+  const colorfulRatio = opaquePixels === 0 ? 0 : colorfulPixels / opaquePixels
+  const nearWhiteRatio = opaquePixels === 0 ? 0 : nearWhitePixels / opaquePixels
+  const requestText = `${request.prompt} ${request.style ?? ''}`
+
+  if (opaqueRatio < 0.015) {
+    throw new Error('FOREGROUND_SUBJECT_TOO_SMALL')
+  }
+  if (asksForColoredAsset(requestText) && colorfulRatio < 0.025) {
+    throw new Error('FOREGROUND_COLOR_MISSING')
+  }
+  if (nearBlackRatio > 0.1 && colorfulRatio < 0.06) {
+    throw new Error('FOREGROUND_RESIDUAL_LINE_ART')
+  }
+  if (nearWhiteRatio > 0.4 && colorfulRatio < 0.03) {
+    throw new Error('FOREGROUND_UNFINISHED_SKETCH')
   }
 }
 
@@ -258,7 +652,85 @@ export async function generateAsset(
     // Cache miss; continue to the configured provider.
   }
 
-  if (config.IMAGE_PROVIDER === 'stable-diffusion-webui') {
+  const localPreset = localVectorPresetSvg(request)
+  if (localPreset) {
+    await writeFile(svgPath, localPreset, 'utf8')
+    return {
+      id,
+      url: `/api/assets/${id}`,
+      width: request.width,
+      height: request.height,
+      mimeType: 'image/svg+xml',
+      backgroundRemoved: true,
+      source: 'preset',
+    }
+  }
+
+  if (config.IMAGE_PROVIDER === 'gemini-image') {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const generated = await generateWithGemini(
+          request,
+          config,
+          fetcher,
+          cacheDirectory,
+          attempt === 0,
+        )
+        const normalized = await sharp(generated)
+          .resize(request.width, request.height, {
+            fit: request.background === 'transparent' ? 'contain' : 'cover',
+            background:
+              request.background === 'transparent'
+                ? { r: 255, g: 255, b: 255, alpha: 1 }
+                : undefined,
+          })
+          .png()
+          .toBuffer()
+        const semanticCutout =
+          request.background === 'transparent'
+            ? await removeForegroundWithOpenCv(normalized, {
+                ...(request.referenceAssetId &&
+                (request.preserveColors || request.preservePose)
+                  ? {
+                      referencePath: path.join(
+                        cacheDirectory,
+                        `${request.referenceAssetId}.png`,
+                      ),
+                      preserveColors: request.preserveColors ?? false,
+                      preservePose: request.preservePose ?? false,
+                    }
+                  : {}),
+              })
+            : null
+        const output =
+          request.background === 'transparent'
+            ? (semanticCutout ?? (await removeSolidBackground(normalized)))
+            : normalized
+        if (request.background === 'transparent') {
+          await validateTransparentCutout(output)
+          await validateForegroundAssetQuality(output, request)
+        }
+        await writeFile(pngPath, output)
+        return {
+          id,
+          url: `/api/assets/${id}`,
+          width: request.width,
+          height: request.height,
+          mimeType: 'image/png',
+          backgroundRemoved: request.background === 'transparent',
+          source: 'generated',
+        }
+      } catch {
+        // Retry once without visual inputs. Some compatible gateways interpret
+        // reference images as a request for a character sheet instead of an edit.
+      }
+    }
+  }
+
+  if (
+    config.IMAGE_PROVIDER === 'gemini-image' ||
+    config.IMAGE_PROVIDER === 'stable-diffusion-webui'
+  ) {
     let lastError: Error | null = null
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -361,12 +833,29 @@ export async function generateAsset(
         )
         if (!encoded) throw new Error('SD_EMPTY_IMAGE')
         const generated = Buffer.from(encoded, 'base64')
+        const semanticCutout =
+          request.background === 'transparent'
+            ? await removeForegroundWithOpenCv(generated, {
+                ...(request.referenceAssetId &&
+                (request.preserveColors || request.preservePose)
+                  ? {
+                      referencePath: path.join(
+                        cacheDirectory,
+                        `${request.referenceAssetId}.png`,
+                      ),
+                      preserveColors: request.preserveColors ?? false,
+                      preservePose: request.preservePose ?? false,
+                    }
+                  : {}),
+              })
+            : null
         const output =
           request.background === 'transparent'
-            ? await removeSolidBackground(generated)
+            ? (semanticCutout ?? (await removeSolidBackground(generated)))
             : generated
         if (request.background === 'transparent') {
           await validateTransparentCutout(output)
+          await validateForegroundAssetQuality(output, request)
         }
         await writeFile(pngPath, output)
         return {

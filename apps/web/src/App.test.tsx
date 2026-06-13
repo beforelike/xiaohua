@@ -228,6 +228,166 @@ describe('App', () => {
     })
   })
 
+  it('creates editable text locally without calling image generation', async () => {
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'create-title',
+            action: 'create',
+            objectType: 'text',
+            properties: {
+              text: '今天也要开心',
+              name: '开心标题',
+              position: 'top',
+              color: '#dc2626',
+              fontSize: 72,
+              fontWeight: 'bold',
+            },
+            creativeDirection: 'cheerful hand-drawn poster',
+            sceneSummary: '顶部是一行醒目的红色标题',
+            requiresGeneration: false,
+            confidence: 1,
+          },
+        }),
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '顶部写上“今天也要开心”，用红色粗体' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('已添加文字“今天也要开心”')).toBeInTheDocument(),
+    )
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/assets/generate'),
+      ),
+    ).toBe(false)
+    expect(useProjectStore.getState().project.layers[0]).toMatchObject({
+      type: 'text',
+      textContent: '今天也要开心',
+      fill: '#dc2626',
+      fontSize: 72,
+      fontWeight: 'bold',
+    })
+    expect(useProjectStore.getState().project.memory).toMatchObject({
+      creativeDirection: 'cheerful hand-drawn poster',
+    })
+    expect(useProjectStore.getState().project.memory.sceneSummary).toContain(
+      '文字“今天也要开心”位于上方',
+    )
+    expect(screen.getByLabelText('作品记忆')).toHaveTextContent(
+      '文字“今天也要开心”位于上方',
+    )
+  })
+
+  it('places a new object relative to the referenced layer', async () => {
+    useProjectStore.getState().addReadyLayer({
+      id: 'tree',
+      name: '树',
+      type: 'preset',
+      source: 'preset',
+      width: 220,
+      height: 320,
+      x: 180,
+      y: 240,
+      createdBy: 'voice',
+    })
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'create-bird-by-tree',
+            action: 'create',
+            objectType: 'preset',
+            target: { name: '树' },
+            prompt: '在树旁边画一只小鸟',
+            properties: { name: '小鸟', position: 'right' },
+            requiresGeneration: false,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/bird', source: 'generated' },
+        }),
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '在树旁边画一只小鸟' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(2),
+    )
+    const [tree, bird] = useProjectStore.getState().project.layers
+    expect(bird).toMatchObject({
+      name: '小鸟',
+      relation: 'right-of:树',
+      semanticDescription: '在树旁边画一只小鸟，位于树附近',
+    })
+    expect(bird!.x).toBeGreaterThan(tree!.x + tree!.width)
+    expect(useProjectStore.getState().project.memory.sceneSummary).toContain(
+      '小鸟在树右侧',
+    )
+  })
+
+  it('recolors SVG assets locally before falling back to image generation', async () => {
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'recolor-tree',
+            action: 'modify',
+            target: { id: 'tree' },
+            prompt: '把树改成红色',
+            properties: { color: '#dc2626' },
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+    })
+    useProjectStore.getState().addReadyLayer({
+      id: 'tree',
+      name: '树',
+      type: 'preset',
+      source: 'preset',
+      assetUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg><path fill="#506f4b" d="M0 0h10v10z"/></svg>')}`,
+      width: 220,
+      height: 320,
+      createdBy: 'voice',
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '把树改成红色' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('已将树改成指定颜色')).toBeInTheDocument(),
+    )
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/assets/generate'),
+      ),
+    ).toBe(false)
+    const tree = useProjectStore.getState().project.layers[0]!
+    expect(decodeURIComponent(tree.assetUrl!)).toContain('fill="#dc2626"')
+    expect(tree.id).toBe('tree')
+  })
+
   it('creates separated scene layers with the suggested composition', async () => {
     stubApi({
       '/api/commands/parse': () =>

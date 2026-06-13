@@ -41,12 +41,20 @@ export function LayerPanel({ project, execute }: LayerPanelProps) {
               onClick={() => execute(command('select', layer.id))}
             >
               <span className="layer-thumb">
-                {layer.assetUrl ? <img src={layer.assetUrl} alt="" /> : null}
+                {layer.assetUrl ? (
+                  <img src={layer.assetUrl} alt="" />
+                ) : layer.type === 'text' ? (
+                  <span aria-hidden="true">T</span>
+                ) : null}
               </span>
               <span>
                 <strong>{layer.name}</strong>
                 <small>
-                  {layer.source === 'generated' ? 'AI 生成' : '预设素材'}
+                  {layer.type === 'text'
+                    ? '文字'
+                    : layer.source === 'generated'
+                      ? 'AI 生成'
+                      : '预设素材'}
                 </small>
               </span>
             </button>

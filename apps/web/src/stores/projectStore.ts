@@ -16,6 +16,7 @@ import {
   type ModelFactoryOptions,
   type NewLayer,
 } from '../features/project/model'
+import { refreshProjectSceneMemory } from '../features/scene/memory'
 
 export interface ProjectStore {
   project: Project
@@ -23,8 +24,18 @@ export interface ProjectStore {
   addReadyLayer: (input: NewLayer) => Layer
   replaceLayerAsset: (
     id: string,
-    asset: Pick<Layer, 'assetUrl' | 'source'> & { prompt?: string },
+    asset: Pick<Layer, 'assetUrl' | 'source'> & {
+      prompt?: string
+      negativePrompt?: string
+      semanticDescription?: string
+    },
   ) => boolean
+  rememberIntent: (input: {
+    text: string
+    creativeDirection?: string
+    sceneSummary?: string
+    style?: string
+  }) => void
   addCharacterAsset: (
     input: Omit<CharacterAsset, 'createdAt' | 'updatedAt'>,
   ) => CharacterAsset
@@ -44,7 +55,10 @@ export function createProjectStore(
     addReadyLayer: (input) => {
       const current = get().project
       const layer = createLayer(current, input, factory)
-      set({ project: addLayer(current, layer, now()), lastResult: null })
+      set({
+        project: refreshProjectSceneMemory(addLayer(current, layer, now())),
+        lastResult: null,
+      })
       return layer
     },
     replaceLayerAsset: (id, asset) => {
@@ -52,7 +66,7 @@ export function createProjectStore(
       const target = current.layers.find((layer) => layer.id === id)
       if (!target || !asset.assetUrl) return false
       set({
-        project: {
+        project: refreshProjectSceneMemory({
           ...current,
           layers: current.layers.map((layer) =>
             layer.id === id
@@ -62,15 +76,44 @@ export function createProjectStore(
                   source: asset.source,
                   status: 'ready',
                   ...(asset.prompt ? { prompt: asset.prompt } : {}),
+                  ...(asset.negativePrompt
+                    ? { negativePrompt: asset.negativePrompt }
+                    : {}),
+                  ...(asset.semanticDescription
+                    ? { semanticDescription: asset.semanticDescription }
+                    : {}),
                   updatedAt: now(),
                 }
               : layer,
           ),
           updatedAt: now(),
-        },
+        }),
         lastResult: null,
       })
       return true
+    },
+    rememberIntent: (input) => {
+      const current = get().project
+      const timestamp = now()
+      set({
+        project: {
+          ...current,
+          globalStyle: input.style || current.globalStyle,
+          memory: {
+            ...current.memory,
+            creativeDirection:
+              input.creativeDirection || current.memory.creativeDirection,
+            sceneSummary: input.sceneSummary || current.memory.sceneSummary,
+            recentIntents: [
+              input.text,
+              ...current.memory.recentIntents.filter(
+                (intent) => intent !== input.text,
+              ),
+            ].slice(0, 20),
+          },
+          updatedAt: timestamp,
+        },
+      })
     },
     addCharacterAsset: (input) => {
       const current = get().project
@@ -97,8 +140,12 @@ export function createProjectStore(
     },
     execute: (command) => {
       const result = executeCommand(get().project, command, now())
-      if (result.ok) set({ project: result.project, lastResult: result })
-      else set({ lastResult: result })
+      if (result.ok) {
+        set({
+          project: refreshProjectSceneMemory(result.project),
+          lastResult: result,
+        })
+      } else set({ lastResult: result })
       return result
     },
     replaceProject: (project) => set({ project, lastResult: null }),

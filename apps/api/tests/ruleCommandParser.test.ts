@@ -59,6 +59,97 @@ describe('parseRuleCommand', () => {
     })
   })
 
+  it('creates the object after the drawing verb instead of the reference object', () => {
+    const command = parseRuleCommand(
+      {
+        schemaVersion: 1,
+        text: '在树旁边画一只小鸟',
+        context: {
+          ...context,
+          recentLayers: [
+            { id: 'tree', name: '树', type: 'preset' },
+            ...context.recentLayers,
+          ],
+        },
+      },
+      () => 'command-bird',
+    )
+
+    expect(command).toMatchObject({
+      action: 'create',
+      target: { name: '树' },
+      objectType: 'preset',
+      properties: { name: '小鸟', position: 'right' },
+      requiresGeneration: false,
+    })
+  })
+
+  it('keeps below relations for new objects anchored to existing layers', () => {
+    const command = parseRuleCommand(
+      {
+        schemaVersion: 1,
+        text: '在树下画一朵花',
+        context: {
+          ...context,
+          recentLayers: [
+            { id: 'tree', name: '树', type: 'preset' },
+            ...context.recentLayers,
+          ],
+        },
+      },
+      () => 'command-flower',
+    )
+
+    expect(command).toMatchObject({
+      action: 'create',
+      target: { name: '树' },
+      properties: { name: '花', position: 'bottom' },
+    })
+  })
+
+  it('creates editable text without image generation', () => {
+    expect(parse('在顶部写上“今天也要开心”，用醒目的粗体')).toMatchObject({
+      action: 'create',
+      objectType: 'text',
+      properties: {
+        text: '今天也要开心',
+        position: 'top',
+        fontWeight: 'bold',
+      },
+      requiresGeneration: false,
+    })
+  })
+
+  it('edits existing text content and color without image generation', () => {
+    const textContext: ParseCommandRequest['context'] = {
+      ...context,
+      selectedLayerId: 'title',
+      recentLayers: [
+        {
+          id: 'title',
+          name: '标题',
+          type: 'text',
+          textContent: '今天也要开心',
+        },
+      ],
+    }
+    const command = parseRuleCommand(
+      {
+        schemaVersion: 1,
+        text: '把标题文字改成“保持好奇”，换成蓝色',
+        context: textContext,
+      },
+      () => 'command-text',
+    )
+
+    expect(command).toMatchObject({
+      action: 'modify',
+      target: { name: '标题' },
+      properties: { text: '保持好奇', color: '#2563eb' },
+      requiresGeneration: false,
+    })
+  })
+
   it('marks object restyling as generation without changing its target', () => {
     expect(parse('把树换成更梦幻的风格')).toMatchObject({
       action: 'modify',
@@ -67,13 +158,30 @@ describe('parseRuleCommand', () => {
     })
   })
 
-  it.each([
-    '把奔跑的马画成一匹黑马',
-    '给奔跑的马加上金色马鞍',
-    '将太阳涂成橙红色',
-  ])('treats generated edits as modifications: %s', (text) => {
-    expect(parse(text)).toMatchObject({
+  it('recognizes adding an accessory to an existing object', () => {
+    expect(parse('给奔跑的马戴上一顶蓝色帽子')).toMatchObject({
       action: 'modify',
+      target: { name: '奔跑的马' },
+      prompt: '给奔跑的马戴上一顶蓝色帽子',
+      requiresGeneration: true,
+    })
+  })
+
+  it.each(['把奔跑的马画成一匹黑马', '给奔跑的马加上金色马鞍'])(
+    'treats generated edits as modifications: %s',
+    (text) => {
+      expect(parse(text)).toMatchObject({
+        action: 'modify',
+        requiresGeneration: true,
+      })
+    },
+  )
+
+  it('keeps requested colors on object restyling commands', () => {
+    expect(parse('将太阳涂成红色')).toMatchObject({
+      action: 'modify',
+      target: { name: '太阳' },
+      properties: { color: '#dc2626' },
       requiresGeneration: true,
     })
   })

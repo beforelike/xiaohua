@@ -90,4 +90,63 @@ describe('projectStore', () => {
       prompt: '梦幻的树',
     })
   })
+
+  it('persists creative memory and recent intent', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { now: () => second },
+    )
+
+    store.getState().rememberIntent({
+      text: '在树下加一只看月亮的小猫',
+      creativeDirection: 'quiet warm storybook night',
+      sceneSummary: '一棵树和树下的小猫共同望向月亮',
+      style: 'soft hand-painted storybook illustration',
+    })
+
+    expect(store.getState().project).toMatchObject({
+      globalStyle: 'soft hand-painted storybook illustration',
+      memory: {
+        creativeDirection: 'quiet warm storybook night',
+        sceneSummary: '一棵树和树下的小猫共同望向月亮',
+        recentIntents: ['在树下加一只看月亮的小猫'],
+      },
+    })
+  })
+
+  it('refreshes local scene memory after adding and modifying layers', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => 'tree', now: () => second },
+    )
+
+    store.getState().addReadyLayer({
+      name: '树',
+      type: 'preset',
+      source: 'preset',
+      width: 220,
+      height: 320,
+      x: 120,
+      y: 240,
+      createdBy: 'voice',
+    })
+
+    expect(store.getState().project.memory.sceneSummary).toContain(
+      '树位于中部左侧',
+    )
+
+    store.getState().execute({
+      schemaVersion: 1,
+      id: 'move-tree',
+      action: 'modify',
+      target: { name: '树' },
+      properties: { position: 'right' },
+      requiresGeneration: false,
+      confidence: 1,
+    })
+
+    expect(store.getState().project.memory.sceneSummary).toContain(
+      '树位于中部右侧',
+    )
+  })
 })

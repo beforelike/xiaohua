@@ -10,6 +10,7 @@ import {
   Layer as KonvaLayer,
   Rect,
   Stage,
+  Text,
   Transformer,
 } from 'react-konva'
 import type Konva from 'konva'
@@ -32,57 +33,107 @@ function CanvasLayer({
   onTransform,
 }: CanvasLayerProps) {
   const [image] = useImage(layer.assetUrl ?? '', 'anonymous')
-  const nodeRef = useRef<Konva.Image>(null)
+  const imageRef = useRef<Konva.Image>(null)
+  const textRef = useRef<Konva.Text>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
 
   useEffect(() => {
-    if (selected && nodeRef.current && transformerRef.current) {
-      transformerRef.current.nodes([nodeRef.current])
+    const node = layer.type === 'text' ? textRef.current : imageRef.current
+    if (selected && node && transformerRef.current) {
+      transformerRef.current.nodes([node])
       transformerRef.current.getLayer()?.batchDraw()
     }
-  }, [selected])
+  }, [selected, layer.type])
 
   if (!layer.visible) return null
 
   return (
     <>
-      <Image
-        ref={nodeRef}
-        image={image}
-        x={layer.x}
-        y={layer.y}
-        width={layer.width}
-        height={layer.height}
-        rotation={layer.rotation}
-        opacity={layer.opacity}
-        draggable={!layer.locked}
-        onClick={onSelect}
-        onTap={onSelect}
-        onDragEnd={(event) => {
-          onTransform({
-            x: event.target.x(),
-            y: event.target.y(),
-            width: layer.width,
-            height: layer.height,
-            rotation: event.target.rotation(),
-          })
-        }}
-        onTransformEnd={() => {
-          const node = nodeRef.current
-          if (!node) return
-          const scaleX = node.scaleX()
-          const scaleY = node.scaleY()
-          node.scaleX(1)
-          node.scaleY(1)
-          onTransform({
-            x: node.x(),
-            y: node.y(),
-            width: Math.max(24, node.width() * scaleX),
-            height: Math.max(24, node.height() * scaleY),
-            rotation: node.rotation(),
-          })
-        }}
-      />
+      {layer.type === 'text' ? (
+        <Text
+          ref={textRef}
+          text={layer.textContent ?? layer.name}
+          x={layer.x}
+          y={layer.y}
+          width={layer.width}
+          height={layer.height}
+          fontFamily={layer.fontFamily ?? '"Microsoft YaHei", sans-serif'}
+          fontSize={layer.fontSize ?? 56}
+          fontStyle={layer.fontWeight === 'bold' ? 'bold' : 'normal'}
+          fill={layer.fill ?? '#2b2923'}
+          align={layer.align ?? 'center'}
+          verticalAlign="middle"
+          stroke={layer.stroke}
+          strokeWidth={layer.strokeWidth ?? 0}
+          rotation={layer.rotation}
+          opacity={layer.opacity}
+          draggable={!layer.locked}
+          onClick={onSelect}
+          onTap={onSelect}
+          onDragEnd={(event) => {
+            onTransform({
+              x: event.target.x(),
+              y: event.target.y(),
+              width: layer.width,
+              height: layer.height,
+              rotation: event.target.rotation(),
+            })
+          }}
+          onTransformEnd={() => {
+            const node = textRef.current
+            if (!node) return
+            const scaleX = node.scaleX()
+            const scaleY = node.scaleY()
+            node.scaleX(1)
+            node.scaleY(1)
+            onTransform({
+              x: node.x(),
+              y: node.y(),
+              width: Math.max(24, node.width() * scaleX),
+              height: Math.max(24, node.height() * scaleY),
+              rotation: node.rotation(),
+            })
+          }}
+        />
+      ) : (
+        <Image
+          ref={imageRef}
+          image={image}
+          x={layer.x}
+          y={layer.y}
+          width={layer.width}
+          height={layer.height}
+          rotation={layer.rotation}
+          opacity={layer.opacity}
+          draggable={!layer.locked}
+          onClick={onSelect}
+          onTap={onSelect}
+          onDragEnd={(event) => {
+            onTransform({
+              x: event.target.x(),
+              y: event.target.y(),
+              width: layer.width,
+              height: layer.height,
+              rotation: event.target.rotation(),
+            })
+          }}
+          onTransformEnd={() => {
+            const node = imageRef.current
+            if (!node) return
+            const scaleX = node.scaleX()
+            const scaleY = node.scaleY()
+            node.scaleX(1)
+            node.scaleY(1)
+            onTransform({
+              x: node.x(),
+              y: node.y(),
+              width: Math.max(24, node.width() * scaleX),
+              height: Math.max(24, node.height() * scaleY),
+              rotation: node.rotation(),
+            })
+          }}
+        />
+      )}
       {selected && !layer.locked ? (
         <Transformer
           ref={transformerRef}
@@ -132,8 +183,16 @@ export const LayerCanvas = forwardRef<LayerCanvasHandle, LayerCanvasProps>(
 
     const scale = width / project.canvas.width
     useImperativeHandle(ref, () => ({
-      toDataUrl: () =>
-        stageRef.current?.toDataURL({ pixelRatio: 1 / scale }) ?? null,
+      toDataUrl: () => {
+        const stage = stageRef.current
+        if (!stage) return null
+        const transformers = stage.find('Transformer')
+        transformers.forEach((transformer) => transformer.hide())
+        const dataUrl = stage.toDataURL({ pixelRatio: 1 / scale })
+        transformers.forEach((transformer) => transformer.show())
+        stage.batchDraw()
+        return dataUrl
+      },
     }))
 
     return (

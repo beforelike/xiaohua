@@ -19,10 +19,33 @@ function replaceLayer(
   nextLayer: Layer,
   now: string,
 ): Project {
+  const previousLayer = project.layers.find(
+    (layer) => layer.id === nextLayer.id,
+  )
+  const scaleX = previousLayer ? nextLayer.width / previousLayer.width : 1
+  const scaleY = previousLayer ? nextLayer.height / previousLayer.height : 1
+  const rotationDelta = previousLayer
+    ? nextLayer.rotation - previousLayer.rotation
+    : 0
   return {
     ...project,
     layers: project.layers.map((layer) =>
-      layer.id === nextLayer.id ? nextLayer : layer,
+      layer.id === nextLayer.id
+        ? nextLayer
+        : previousLayer && layer.parentLayerId === nextLayer.id
+          ? constrainLayer(
+              {
+                ...layer,
+                x: nextLayer.x + (layer.x - previousLayer.x) * scaleX,
+                y: nextLayer.y + (layer.y - previousLayer.y) * scaleY,
+                width: layer.width * scaleX,
+                height: layer.height * scaleY,
+                rotation: layer.rotation + rotationDelta,
+                updatedAt: now,
+              },
+              project,
+            )
+          : layer,
     ),
     selectedLayerId: nextLayer.id,
     recentLayerIds: [
@@ -141,8 +164,14 @@ export function executeCommand(
   }
 
   if (command.action === 'delete') {
+    const removedIds = new Set([
+      target.id,
+      ...project.layers
+        .filter((layer) => layer.parentLayerId === target.id)
+        .map((layer) => layer.id),
+    ])
     const remaining = normalizeLayers(
-      project.layers.filter((layer) => layer.id !== target.id),
+      project.layers.filter((layer) => !removedIds.has(layer.id)),
     )
     const fallback = remaining.at(-1)?.id ?? null
     return {
@@ -154,7 +183,9 @@ export function executeCommand(
           project.selectedLayerId === target.id
             ? fallback
             : project.selectedLayerId,
-        recentLayerIds: project.recentLayerIds.filter((id) => id !== target.id),
+        recentLayerIds: project.recentLayerIds.filter(
+          (id) => !removedIds.has(id),
+        ),
         updatedAt: now,
       },
       message: `已删除${target.name}`,
@@ -219,6 +250,25 @@ export function executeCommand(
     }
     if (properties?.rotation !== undefined) {
       nextLayer.rotation = properties.rotation
+    }
+    if (properties?.text !== undefined && nextLayer.type === 'text') {
+      nextLayer.textContent = properties.text
+      nextLayer.semanticDescription = `文字“${properties.text}”`
+    }
+    if (properties?.color !== undefined) nextLayer.fill = properties.color
+    if (properties?.fontFamily !== undefined) {
+      nextLayer.fontFamily = properties.fontFamily
+    }
+    if (properties?.fontSize !== undefined) {
+      nextLayer.fontSize = properties.fontSize
+    }
+    if (properties?.fontWeight !== undefined) {
+      nextLayer.fontWeight = properties.fontWeight
+    }
+    if (properties?.align !== undefined) nextLayer.align = properties.align
+    if (properties?.stroke !== undefined) nextLayer.stroke = properties.stroke
+    if (properties?.strokeWidth !== undefined) {
+      nextLayer.strokeWidth = properties.strokeWidth
     }
     if (properties?.name) nextLayer.name = properties.name
   }

@@ -34,6 +34,13 @@ export function createProject(
     title,
     canvas: DEFAULT_CANVAS,
     globalStyle: '',
+    memory: {
+      creativeDirection: '',
+      sceneSummary: '',
+      palette: [],
+      lighting: '',
+      recentIntents: [],
+    },
     characterAssets: [],
     layers: [],
     selectedLayerId: null,
@@ -53,7 +60,19 @@ export type NewLayer = Pick<
       | 'id'
       | 'assetUrl'
       | 'prompt'
+      | 'negativePrompt'
+      | 'semanticDescription'
       | 'characterAssetId'
+      | 'parentLayerId'
+      | 'relation'
+      | 'textContent'
+      | 'fontFamily'
+      | 'fontSize'
+      | 'fontWeight'
+      | 'fill'
+      | 'align'
+      | 'stroke'
+      | 'strokeWidth'
       | 'status'
       | 'x'
       | 'y'
@@ -94,6 +113,22 @@ export function createLayer(
     updatedAt: now,
     ...(input.assetUrl ? { assetUrl: input.assetUrl } : {}),
     ...(input.prompt ? { prompt: input.prompt } : {}),
+    ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+    ...(input.semanticDescription
+      ? { semanticDescription: input.semanticDescription }
+      : {}),
+    ...(input.parentLayerId ? { parentLayerId: input.parentLayerId } : {}),
+    ...(input.relation ? { relation: input.relation } : {}),
+    ...(input.textContent ? { textContent: input.textContent } : {}),
+    ...(input.fontFamily ? { fontFamily: input.fontFamily } : {}),
+    ...(input.fontSize ? { fontSize: input.fontSize } : {}),
+    ...(input.fontWeight ? { fontWeight: input.fontWeight } : {}),
+    ...(input.fill ? { fill: input.fill } : {}),
+    ...(input.align ? { align: input.align } : {}),
+    ...(input.stroke ? { stroke: input.stroke } : {}),
+    ...(input.strokeWidth !== undefined
+      ? { strokeWidth: input.strokeWidth }
+      : {}),
   }
 }
 

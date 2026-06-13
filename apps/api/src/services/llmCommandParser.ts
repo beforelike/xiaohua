@@ -9,6 +9,27 @@ interface ChatCompletion {
   choices?: Array<{ message?: { content?: string } }>
 }
 
+function normalizeLlmCommandPayload(
+  value: unknown,
+  request: ParseCommandRequest,
+) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const command = { ...(value as Record<string, unknown>) }
+  if (typeof command.target === 'string') {
+    const targetText = command.target.trim()
+    const layer = request.context.recentLayers.find(
+      (candidate) =>
+        candidate.id === targetText ||
+        candidate.name === targetText ||
+        targetText.includes(candidate.name),
+    )
+    command.target = layer
+      ? { id: layer.id, name: layer.name }
+      : { name: targetText }
+  }
+  return command
+}
+
 /**
  * LLM 命令解析系统提示词
  *
@@ -17,7 +38,7 @@ interface ChatCompletion {
  * 2. 为每个对象生成增强的英文 SD 提示词
  * 3. 区分背景层（opaque）和前景对象（transparent）
  */
-const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diffusion 提示词工程师。
+const SYSTEM_PROMPT = `你是一个具有作品记忆和视觉导演能力的现代绘图助手。
 
 你的任务是将用户的中文绘图指令转换为 DrawingCommand JSON。
 
@@ -47,13 +68,27 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
    - 用户明确修改、重画、替换或补充已有对象时，必须使用 action="modify"，target 指向 context.recentLayers 中原图层的 id 或 name
    - "把树画成秋天的树"、"给树加上红叶"、"把它换成卡通风格"都是 modify，不得创建同名新对象或新图层
    - 只有用户明确要求增加独立的新画面元素时才使用 create
+   - 修改对象内容时，prompt 必须写成“修改后的完整对象描述”，结合该图层旧 prompt 和用户的新要求，不能只复述“把它改成……”。
 
-4. JSON 格式规则：
+4. 文字能力：
+   - “写上/添加文字/标题是……”默认创建 objectType="text"，requiresGeneration=false。
+   - properties.text 保存准确文字，禁止翻译、改写或漏字。
+   - properties 可设置 color、fontSize、fontWeight、position、rotation、align。
+   - 只有用户明确要求“文字贴纸、艺术字图片、带插画的字效”时才使用 objectType="image" 并生成透明素材。
+
+5. 作品理解与记忆：
+   - 阅读 context 中所有图层、位置、尺寸、旧提示词、sceneSummary 和 creativeDirection。
+   - 输出 creativeDirection：概括作品媒介、情绪、叙事、镜头、色彩和光线方向。
+   - 输出 sceneSummary：准确描述当前画面和本次操作完成后的对象关系，不能凭空添加元素。
+   - 新元素必须适应已有构图、光线、色彩和空间留白，而不是孤立生成。
+
+6. JSON 格式规则：
    - schemaVersion 必须为 1
    - action 只能是: create/select/modify/delete/reorder/rename/save/confirm/cancel
    - confidence 为 0 到 1
    - 当 action="create" 且有多个对象时，必须填写 objects 数组
    - requiresGeneration: 创建时为 true
+   - 文字图层创建时 requiresGeneration=false
 
 输出示例1（用户输入"画马在草原上奔跑"，因为明确提到草原，所以拆分出背景层）：
 {
@@ -152,5 +187,7 @@ export async function parseLlmCommand(
   const content = payload.choices?.[0]?.message?.content
   if (!content) throw new Error('LLM_EMPTY_RESPONSE')
 
-  return drawingCommandSchema.parse(JSON.parse(content))
+  return drawingCommandSchema.parse(
+    normalizeLlmCommandPayload(JSON.parse(content), request),
+  )
 }

@@ -45,6 +45,33 @@ function objectNameFromText(
   return names.find((candidate) => text.includes(candidate))
 }
 
+function createdObjectNameFromText(text: string) {
+  const createVerb = text.search(/画(?!面)|添加|加上|加一个|创建/)
+  const matches = presetObjectNames
+    .map((name) => ({ name, index: text.indexOf(name) }))
+    .filter((match) => match.index >= 0)
+    .sort((left, right) => left.index - right.index)
+  return (
+    matches.find((match) => match.index >= createVerb)?.name ??
+    matches.at(-1)?.name
+  )
+}
+
+function createReferenceTargetFromText(
+  text: string,
+  context: ParseCommandRequest['context'],
+  createdName?: string,
+): DrawingCommand['target'] {
+  const createVerb = text.search(/画(?!面)|添加|加上|加一个|创建/)
+  const beforeCreate = createVerb >= 0 ? text.slice(0, createVerb) : text
+  const name = context.recentLayers
+    .map((layer) => layer.name)
+    .filter((candidate) => candidate !== createdName)
+    .sort((left, right) => right.length - left.length)
+    .find((candidate) => beforeCreate.includes(candidate))
+  return name ? { name } : undefined
+}
+
 function targetFromText(
   text: string,
   context: ParseCommandRequest['context'],
@@ -68,10 +95,27 @@ function positionFromText(text: string): string | undefined {
     [/(中间|中央|正中|居中)/, 'center'],
     [/(左边|左侧|向左|往左|左移)/, 'left'],
     [/(右边|右侧|向右|往右|右移)/, 'right'],
-    [/(上面|上方|向上|往上|上移)/, 'top'],
-    [/(下面|下方|向下|往下|下移)/, 'bottom'],
+    [/(旁边|旁|附近|身边|旁边)/, 'right'],
+    [/(下面|下方|底下|脚下|树下|下面)/, 'bottom'],
+    [/(上面|上方|头顶|顶部)/, 'top'],
+    [/(顶部|上面|上方|向上|往上|上移)/, 'top'],
+    [/(底部|下面|下方|向下|往下|下移)/, 'bottom'],
   ]
   return positions.find(([pattern]) => pattern.test(text))?.[1]
+}
+
+function colorFromText(text: string) {
+  const colors: Array<[RegExp, string]> = [
+    [/红色|红字/, '#dc2626'],
+    [/橙色|橙字/, '#ea580c'],
+    [/黄色|黄字/, '#ca8a04'],
+    [/绿色|绿字/, '#16a34a'],
+    [/蓝色|蓝字/, '#2563eb'],
+    [/紫色|紫字/, '#9333ea'],
+    [/白色|白字/, '#ffffff'],
+    [/黑色|黑字/, '#111827'],
+  ]
+  return colors.find(([pattern]) => pattern.test(text))?.[1]
 }
 
 function looksLikeDrawingDescription(text: string) {
@@ -85,7 +129,7 @@ function looksLikeEditInstruction(text: string) {
 }
 
 function looksLikeGeneratedEdit(text: string) {
-  return /(?:重新生成|重新画|重画|重绘|换成|换一个|画成|改成|变成|涂成|加上|添上|改成.*风格|更.*风格)/.test(
+  return /(?:重新生成|重新画|重画|重绘|换成|换一个|画成|改成|变成|涂成|加上|添上|戴上|戴着|挂上|系上|拿着|抱着|改成.*风格|更.*风格)/.test(
     text,
   )
 }
@@ -143,14 +187,67 @@ export function parseRuleCommand(
   }
 
   const position = positionFromText(text)
+  const targetLayer = request.context.recentLayers.find(
+    (layer) =>
+      layer.id === target?.id ||
+      layer.name === target?.name ||
+      (target?.reference === 'selected' &&
+        layer.id === request.context.selectedLayerId),
+  )
+  if (targetLayer?.type === 'text') {
+    const replacementText =
+      request.text.match(/[“"'‘’]([^”"'‘’]+)[”"'‘’]/)?.[1] ??
+      request.text.match(
+        /(?:文字|标题|内容).*(?:改成|换成|写成)[“"'‘’]?([^”"'‘’，。,.]+)[”"'‘’]?/,
+      )?.[1] ??
+      request.text.match(/(?:改成|换成|写成)[“"'‘’]([^”"'‘’]+)[”"'‘’]/)?.[1]
+    const color = colorFromText(text)
+    const fontWeight = /(?:粗体|加粗|醒目|有力)/.test(text) ? 'bold' : undefined
+    if (replacementText || color || fontWeight || position) {
+      return drawingCommandSchema.parse({
+        ...base,
+        action: 'modify',
+        target,
+        properties: {
+          ...(replacementText ? { text: replacementText.trim() } : {}),
+          ...(color ? { color } : {}),
+          ...(fontWeight ? { fontWeight } : {}),
+          ...(position ? { position } : {}),
+        },
+      })
+    }
+  }
   if (target && looksLikeGeneratedEdit(text)) {
+    const color = colorFromText(text)
     return drawingCommandSchema.parse({
       ...base,
       action: 'modify',
       target,
       prompt: request.text,
+      ...(color ? { properties: { color } } : {}),
       requiresGeneration: true,
       confidence: 0.94,
+    })
+  }
+
+  const textMatch =
+    request.text.match(
+      /(?:写上|写下|添加文字|加上文字|文字是|标题是)[“"'‘’]?([^”"'‘’，。,.]+)[”"'‘’]?/,
+    ) ?? request.text.match(/[“"'‘’]([^”"'‘’]+)[”"'‘’].*(?:文字|标题|字)/)
+  if (textMatch?.[1]) {
+    return drawingCommandSchema.parse({
+      ...base,
+      action: 'create',
+      objectType: 'text',
+      properties: {
+        text: textMatch[1].trim(),
+        name: textMatch[1].trim().slice(0, 20),
+        ...(position ? { position } : {}),
+        ...(colorFromText(text) ? { color: colorFromText(text) } : {}),
+        fontWeight: /(?:醒目|粗体|标题|有力)/.test(text) ? 'bold' : 'normal',
+      },
+      requiresGeneration: false,
+      confidence: 0.97,
     })
   }
 
@@ -158,10 +255,16 @@ export function parseRuleCommand(
     /(?:画(?!面)|添加|加上|加一个|创建)/.test(text) &&
     !(target && looksLikeEditInstruction(text))
   ) {
-    const name = presetObjectNames.find((candidate) => text.includes(candidate))
+    const name = createdObjectNameFromText(text)
+    const createTarget = createReferenceTargetFromText(
+      text,
+      request.context,
+      name,
+    )
     return drawingCommandSchema.parse({
       ...base,
       action: 'create',
+      ...(createTarget ? { target: createTarget } : {}),
       objectType: name ? 'preset' : 'image',
       prompt: request.text,
       properties: {

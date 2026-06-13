@@ -18,7 +18,14 @@ import {
   parseProject,
 } from './features/project/downloads'
 import { resolveTarget } from './features/commands/resolveTarget'
+import { recolorAssetUrl } from './features/assets/recolor'
 import { shouldBuildCharacterAsset } from './features/generation/generationStrategy'
+import {
+  planLayerRelativeToTarget,
+  planGeneratedLayerLayout,
+  planSceneObjectLayout,
+} from './features/scene/layout'
+import { MemoryPanel } from './features/scene/MemoryPanel'
 import { useVoiceInput } from './features/voice/useVoiceInput'
 import { useProjectStore } from './stores/projectStore'
 
@@ -36,56 +43,112 @@ async function readApiError(
   }
 }
 
-function sceneObjectLayout(
-  object: SceneObject,
-  project: Project,
-): Pick<Layer, 'x' | 'y' | 'width' | 'height'> {
-  if (object.isBackground || object.size === 'full') {
+function buildSceneContext(project: Project) {
+  const layers = [...project.layers]
+    .sort((left, right) => left.zIndex - right.zIndex)
+    .map((layer) => ({
+      id: layer.id,
+      name: layer.name,
+      type: layer.type,
+      description:
+        layer.semanticDescription ??
+        layer.prompt ??
+        layer.textContent ??
+        layer.name,
+      position: {
+        x: Math.round(layer.x),
+        y: Math.round(layer.y),
+        width: Math.round(layer.width),
+        height: Math.round(layer.height),
+        rotation: layer.rotation,
+        zIndex: layer.zIndex,
+      },
+    }))
+  return JSON.stringify({
+    creativeDirection: project.memory.creativeDirection,
+    sceneSummary: project.memory.sceneSummary,
+    palette: project.memory.palette,
+    lighting: project.memory.lighting,
+    recentIntents: project.memory.recentIntents.slice(0, 6),
+    canvas: project.canvas,
+    layers,
+  })
+}
+
+function assetIdFromUrl(assetUrl?: string) {
+  return assetUrl?.match(/\/api\/assets\/([a-f0-9]{24})/)?.[1]
+}
+
+function accessoryFromInstruction(prompt?: string) {
+  const match = prompt?.match(
+    /(?:戴上|戴着|加上|添上|挂上|系上|拿着|抱着)(?:一(?:个|顶|条|只|把|束))?([^，。,.]+)/,
+  )
+  return match?.[1]?.trim() || null
+}
+
+function accessoryLayout(accessory: string, target: Layer) {
+  if (/(围巾|项链|领结|领带)/.test(accessory)) {
     return {
-      x: 0,
-      y: 0,
-      width: project.canvas.width,
-      height: project.canvas.height,
+      x: target.x + target.width * 0.2,
+      y: target.y + target.height * 0.28,
+      width: target.width * 0.6,
+      height: target.height * 0.22,
     }
   }
+  if (/(帽|皇冠|头饰|发饰)/.test(accessory)) {
+    return {
+      x: target.x + target.width * 0.2,
+      y: target.y - target.height * 0.03,
+      width: target.width * 0.6,
+      height: target.height * 0.3,
+    }
+  }
+  return {
+    x: target.x + target.width * 0.55,
+    y: target.y + target.height * 0.35,
+    width: target.width * 0.4,
+    height: target.height * 0.4,
+  }
+}
 
-  const sizeRatio = { small: 0.2, medium: 0.32, large: 0.48 }[object.size]
-  const width = Math.round(project.canvas.width * sizeRatio)
-  const height = width
-  const margin = 48
-  const positions = {
-    'top-left': { x: margin, y: margin },
-    top: { x: (project.canvas.width - width) / 2, y: margin },
-    'top-right': {
-      x: project.canvas.width - width - margin,
-      y: margin,
-    },
-    left: {
-      x: margin,
-      y: (project.canvas.height - height) / 2,
-    },
-    center: {
-      x: (project.canvas.width - width) / 2,
-      y: (project.canvas.height - height) / 2,
-    },
-    right: {
-      x: project.canvas.width - width - margin,
-      y: (project.canvas.height - height) / 2,
-    },
-    'bottom-left': {
-      x: margin,
-      y: project.canvas.height - height - margin,
-    },
-    bottom: {
-      x: (project.canvas.width - width) / 2,
-      y: project.canvas.height - height - margin,
-    },
-    'bottom-right': {
-      x: project.canvas.width - width - margin,
-      y: project.canvas.height - height - margin,
-    },
-  } as const
-  return { ...positions[object.position], width, height }
+function accessoryColor(accessory: string) {
+  const colors: Array<[RegExp, string]> = [
+    [/红/, '#dc2626'],
+    [/橙/, '#ea580c'],
+    [/黄|金/, '#eab308'],
+    [/绿/, '#16a34a'],
+    [/蓝/, '#2563eb'],
+    [/紫/, '#9333ea'],
+    [/粉/, '#ec4899'],
+    [/黑/, '#111827'],
+    [/白/, '#f8fafc'],
+  ]
+  return colors.find(([pattern]) => pattern.test(accessory))?.[1] ?? '#7c3aed'
+}
+
+function svgDataUrl(svg: string) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+function localAccessoryAsset(accessory: string) {
+  const color = accessoryColor(accessory)
+  const dark = '#312e81'
+  if (/帽/.test(accessory)) {
+    return svgDataUrl(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 256"><path d="M256 18 365 188H147Z" fill="${color}" stroke="${dark}" stroke-width="18" stroke-linejoin="round"/><path d="M82 184c70-24 278-24 348 0l-22 54H104Z" fill="${color}" stroke="${dark}" stroke-width="18" stroke-linejoin="round"/><path d="m247 76 12 25 28 4-20 20 5 28-25-13-25 13 5-28-20-20 28-4Z" fill="#fde68a"/></svg>`,
+    )
+  }
+  if (/(围巾|领带|领结)/.test(accessory)) {
+    return svgDataUrl(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 220"><path d="M88 42c92-36 244-36 336 0v76c-98 34-238 34-336 0Z" fill="${color}" stroke="${dark}" stroke-width="16"/><path d="m292 112 92 10-34 88-74-28Z" fill="${color}" stroke="${dark}" stroke-width="16" stroke-linejoin="round"/><path d="m220 114-78 18 46 76 64-40Z" fill="${color}" stroke="${dark}" stroke-width="16" stroke-linejoin="round"/></svg>`,
+    )
+  }
+  if (/皇冠|王冠/.test(accessory)) {
+    return svgDataUrl(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 260"><path d="m72 72 92 76 92-120 92 120 92-76-34 154H106Z" fill="${color}" stroke="${dark}" stroke-width="18" stroke-linejoin="round"/><circle cx="164" cy="146" r="14" fill="#fef3c7"/><circle cx="256" cy="92" r="14" fill="#fef3c7"/><circle cx="348" cy="146" r="14" fill="#fef3c7"/></svg>`,
+    )
+  }
+  return null
 }
 
 function voiceCandidateIndex(text: string, candidates: Layer[]): number {
@@ -121,6 +184,7 @@ function App() {
   const addReadyLayer = useProjectStore((state) => state.addReadyLayer)
   const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
   const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
+  const rememberIntent = useProjectStore((state) => state.rememberIntent)
   const execute = useProjectStore((state) => state.execute)
   const [text, setText] = useState('')
   const [status, setStatus] = useState('准备好了，请直接说出绘图指令。')
@@ -143,6 +207,52 @@ function App() {
       return
     }
     if (command.action === 'create') {
+      if (command.objectType === 'text') {
+        const content =
+          command.properties?.text ??
+          command.properties?.name ??
+          command.prompt?.replace(
+            /^(?:写上|写下|添加文字|加上文字|标题是)\s*/,
+            '',
+          )
+        if (!content) {
+          setStatus('请告诉我需要添加的文字内容。')
+          return
+        }
+        const layer = addReadyLayer({
+          name: command.properties?.name ?? content.slice(0, 20),
+          type: 'text',
+          source: 'user',
+          textContent: content,
+          semanticDescription: `画面文字“${content}”`,
+          width: command.properties?.width ?? 460,
+          height: command.properties?.height ?? 130,
+          fontFamily:
+            command.properties?.fontFamily ??
+            '"Microsoft YaHei", "PingFang SC", sans-serif',
+          fontSize: command.properties?.fontSize ?? 64,
+          fontWeight: command.properties?.fontWeight ?? 'bold',
+          fill: command.properties?.color ?? '#2b2923',
+          align: command.properties?.align ?? 'center',
+          stroke: command.properties?.stroke,
+          strokeWidth: command.properties?.strokeWidth ?? 0,
+          rotation: command.properties?.rotation ?? 0,
+          createdBy: 'voice',
+        })
+        if (command.properties?.position) {
+          execute({
+            ...command,
+            action: 'modify',
+            target: { id: layer.id },
+            requiresGeneration: false,
+          })
+        }
+        setStatus(`已添加文字“${content}”`)
+        return
+      }
+
+      const sceneContext = buildSceneContext(useProjectStore.getState().project)
+      const sceneImageDataUrl = canvasRef.current?.toDataUrl() ?? undefined
       // 多对象创建流程：当 LLM 返回了 objects 数组时，逐个生成并创建图层
       if (command.objects && command.objects.length > 0) {
         const totalObjects = command.objects.length
@@ -169,7 +279,9 @@ function App() {
               shouldBuildCharacterAsset(obj, command.prompt)
             ) {
               const identityPrompt = obj.identityPrompt ?? obj.prompt
-              setStatus(`正在建立“${obj.name}”的身份锚点 (${completedObjects}/${totalObjects})…`)
+              setStatus(
+                `正在建立“${obj.name}”的身份锚点 (${completedObjects}/${totalObjects})…`,
+              )
               const anchorResponse = await fetch('/api/assets/generate', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
@@ -185,6 +297,8 @@ function App() {
                   background: 'opaque',
                   enhancedPrompt: true,
                   generationMode: 'standard',
+                  sceneContext,
+                  sceneImageDataUrl,
                 }),
               })
               if (!anchorResponse.ok) {
@@ -198,7 +312,9 @@ function App() {
                   source: 'generated' | 'preset'
                 }
               }
-              setStatus(`正在建立“${obj.name}”的三视图辅助图 (${completedObjects}/${totalObjects})…`)
+              setStatus(
+                `正在建立“${obj.name}”的三视图辅助图 (${completedObjects}/${totalObjects})…`,
+              )
               const turnaroundResponse = await fetch('/api/assets/generate', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
@@ -216,6 +332,8 @@ function App() {
                   generationMode: 'character-action',
                   referenceAssetId: anchorPayload.asset.id,
                   referenceWeight: 0.55,
+                  sceneContext,
+                  sceneImageDataUrl,
                 }),
               })
               if (!turnaroundResponse.ok) {
@@ -240,7 +358,9 @@ function App() {
                 style: command.style ?? '',
               })
             }
-            setStatus(`正在生成“${obj.name}”动作素材 (${completedObjects}/${totalObjects})…`)
+            setStatus(
+              `正在生成“${obj.name}”动作素材 (${completedObjects}/${totalObjects})…`,
+            )
             const response = await fetch('/api/assets/generate', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -259,6 +379,8 @@ function App() {
                   : 'standard',
                 referenceAssetId: characterAsset?.referenceAssetId,
                 referenceWeight: 0.55,
+                sceneContext,
+                sceneImageDataUrl,
               }),
             })
             if (!response.ok) {
@@ -282,18 +404,26 @@ function App() {
             return
           }
         }
+        const placedLayers = [...useProjectStore.getState().project.layers]
         const results = generated.map(({ object, asset, characterAssetId }) => {
-          const layout = sceneObjectLayout(object, project)
-          return addReadyLayer({
+          const layout = planSceneObjectLayout(project, {
+            ...object,
+            avoidLayers: placedLayers,
+          })
+          const layer = addReadyLayer({
             name: object.name,
             type: 'image',
             source: asset.source,
             assetUrl: asset.url,
             prompt: object.prompt,
+            negativePrompt: object.negativePrompt,
+            semanticDescription: object.prompt,
             ...(characterAssetId ? { characterAssetId } : {}),
             ...layout,
             createdBy: 'voice',
           })
+          placedLayers.push(layer)
+          return layer
         })
         if (command.style && command.style !== project.globalStyle) {
           useProjectStore.getState().replaceProject({
@@ -312,6 +442,23 @@ function App() {
       }
 
       // 单对象创建流程（回退）
+      let relationTarget: Layer | null = null
+      if (command.target) {
+        const resolution = resolveTarget(project, command.target)
+        if (!resolution.ok) {
+          setStatus(resolution.message)
+          if (resolution.code === 'AMBIGUOUS_TARGET') {
+            setPending({
+              command,
+              ...(resolution.candidates
+                ? { candidates: resolution.candidates }
+                : {}),
+            })
+          }
+          return
+        }
+        relationTarget = resolution.layer
+      }
       setStatus('正在通过 WebUI 生成新素材…')
       const response = await fetch('/api/assets/generate', {
         method: 'POST',
@@ -324,6 +471,8 @@ function App() {
           width: 512,
           height: 512,
           background: 'transparent',
+          sceneContext,
+          sceneImageDataUrl,
         }),
       })
       if (!response.ok) {
@@ -333,17 +482,36 @@ function App() {
       const payload = (await response.json()) as {
         asset: { url: string; source: 'generated' | 'preset' }
       }
+      const layout = relationTarget
+        ? planLayerRelativeToTarget(project, relationTarget, {
+            position: command.properties?.position,
+            width: 320,
+            height: 320,
+          })
+        : planGeneratedLayerLayout(project, {
+            name: command.properties?.name,
+            position: command.properties?.position,
+            width: 320,
+            height: 320,
+          })
       const layer = addReadyLayer({
         name: command.properties?.name ?? '新元素',
         type: 'image',
         source: payload.asset.source,
         assetUrl: payload.asset.url,
         prompt: command.prompt,
-        width: 320,
-        height: 320,
+        semanticDescription: relationTarget
+          ? `${command.prompt ?? command.properties?.name ?? '新元素'}，位于${relationTarget.name}附近`
+          : command.prompt,
+        ...(relationTarget
+          ? {
+              relation: `${command.properties?.position ?? 'right'}-of:${relationTarget.name}`,
+            }
+          : {}),
+        ...layout,
         createdBy: 'voice',
       })
-      if (command.properties?.position) {
+      if (command.properties?.position && !relationTarget) {
         execute({
           ...command,
           action: 'modify',
@@ -369,26 +537,195 @@ function App() {
         return
       }
       const target = resolution.layer
+      if (target.type === 'text') {
+        const result = execute({
+          ...command,
+          requiresGeneration: false,
+        })
+        setStatus(result.message)
+        return
+      }
+      const accessory = accessoryFromInstruction(command.prompt)
+      if (accessory) {
+        const currentProject = useProjectStore.getState().project
+        const sceneContext = buildSceneContext(currentProject)
+        setStatus(`正在为${target.name}生成独立配饰“${accessory}”…`)
+        const localAsset = localAccessoryAsset(accessory)
+        if (localAsset) {
+          addReadyLayer({
+            name: accessory,
+            type: 'preset',
+            source: 'preset',
+            assetUrl: localAsset,
+            prompt: accessory,
+            semanticDescription: `${target.name}上的${accessory}`,
+            parentLayerId: target.id,
+            relation: `attached-to:${target.name}`,
+            ...accessoryLayout(accessory, target),
+            createdBy: 'voice',
+          })
+          setStatus(`已为${target.name}添加独立配饰“${accessory}”`)
+          return
+        }
+        let accessoryPrompt = `one ${accessory}, wearable accessory only, designed to fit ${target.name}, isolated object, centered, complete accessory visible, no character, no animal, no person, pure white background`
+        let accessoryNegativePrompt = `${target.name}, cat, dog, animal, person, body, face, multiple accessories, text, frame, background`
+        try {
+          const enhanceResponse = await fetch('/api/prompts/enhance-single', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              objectName: accessory,
+              prompt: `只生成独立的${accessory}配饰，不要生成${target.name}或任何角色`,
+              previousPrompt: '',
+              background: 'transparent',
+              globalStyle: command.style ?? currentProject.globalStyle,
+              sceneContext,
+            }),
+          })
+          if (enhanceResponse.ok) {
+            const enhanced = (await enhanceResponse.json()) as {
+              prompt: string
+              negativePrompt: string
+            }
+            accessoryPrompt = `${enhanced.prompt}, accessory only, no wearer, no character`
+            accessoryNegativePrompt = `${enhanced.negativePrompt}, ${target.name}, cat, dog, animal, person, body, face`
+          }
+        } catch {
+          // The deterministic accessory prompt remains usable.
+        }
+        const response = await fetch('/api/assets/generate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            commandId: `${command.id}-accessory`,
+            prompt: accessoryPrompt,
+            negativePrompt: accessoryNegativePrompt,
+            style: command.style ?? currentProject.globalStyle,
+            width: 512,
+            height: 512,
+            background: 'transparent',
+            enhancedPrompt: true,
+            sceneContext,
+          }),
+        })
+        if (!response.ok) {
+          setStatus(
+            await readApiError(response, '配饰生成失败，原对象保持不变。'),
+          )
+          return
+        }
+        const payload = (await response.json()) as {
+          asset: { url: string; source: 'generated' | 'preset' }
+        }
+        addReadyLayer({
+          name: accessory,
+          type: 'image',
+          source: payload.asset.source,
+          assetUrl: payload.asset.url,
+          prompt: accessoryPrompt,
+          negativePrompt: accessoryNegativePrompt,
+          semanticDescription: `${target.name}上的${accessory}`,
+          parentLayerId: target.id,
+          relation: `attached-to:${target.name}`,
+          ...accessoryLayout(accessory, target),
+          createdBy: 'voice',
+        })
+        setStatus(`已为${target.name}添加独立配饰“${accessory}”`)
+        return
+      }
+      const requestedColor = command.properties?.color
+      if (requestedColor && target.assetUrl) {
+        const recoloredAssetUrl = await recolorAssetUrl(
+          target.assetUrl,
+          requestedColor,
+        )
+        if (recoloredAssetUrl) {
+          replaceLayerAsset(target.id, {
+            assetUrl: recoloredAssetUrl,
+            source: target.source,
+            prompt: target.prompt,
+            negativePrompt: target.negativePrompt,
+            semanticDescription: `${target.semanticDescription ?? target.prompt ?? target.name}，本地改色为${requestedColor}`,
+          })
+          setStatus(`已将${target.name}改成指定颜色`)
+          return
+        }
+      }
       const characterAsset = target.characterAssetId
         ? project.characterAssets.find(
             (asset) => asset.id === target.characterAssetId,
           )
         : undefined
+      const targetReferenceId =
+        assetIdFromUrl(target.assetUrl) ?? characterAsset?.referenceAssetId
       setStatus(`正在重新生成${target.name}，旧素材会保留到成功为止…`)
+      const currentProject = useProjectStore.getState().project
+      const sceneContext = buildSceneContext(currentProject)
+      const sceneImageDataUrl = canvasRef.current?.toDataUrl() ?? undefined
+      let enhancedPrompt = command.prompt ?? target.prompt ?? target.name
+      let negativePrompt = target.negativePrompt
+      let identityConstraints =
+        target.semanticDescription ?? target.prompt ?? target.name
+      let preserveColors = true
+      let preservePose = true
+      try {
+        const enhanceResponse = await fetch('/api/prompts/enhance-single', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            objectName: target.name,
+            prompt: command.prompt ?? target.name,
+            previousPrompt:
+              target.semanticDescription ?? target.prompt ?? target.name,
+            background: 'transparent',
+            globalStyle: command.style ?? currentProject.globalStyle,
+            sceneContext,
+          }),
+        })
+        if (enhanceResponse.ok) {
+          const enhanced = (await enhanceResponse.json()) as {
+            prompt: string
+            negativePrompt: string
+            identityConstraints: string
+            preserveColors: boolean
+            preservePose: boolean
+          }
+          enhancedPrompt = enhanced.prompt
+          negativePrompt = enhanced.negativePrompt
+          identityConstraints =
+            enhanced.identityConstraints || identityConstraints
+          preserveColors = enhanced.preserveColors ?? true
+          preservePose = enhanced.preservePose ?? true
+        }
+      } catch {
+        enhancedPrompt = [
+          target.semanticDescription ?? target.prompt ?? target.name,
+          command.prompt,
+        ]
+          .filter(Boolean)
+          .join(', updated with: ')
+      }
       const response = await fetch('/api/assets/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           schemaVersion: 1,
           commandId: command.id,
-          prompt: command.prompt ?? target.prompt ?? target.name,
-          style: command.style ?? project.globalStyle,
+          prompt: enhancedPrompt,
+          negativePrompt,
+          style: command.style ?? currentProject.globalStyle,
           width: 512,
           height: 512,
           background: 'transparent',
-          generationMode: characterAsset ? 'character-action' : 'standard',
-          referenceAssetId: characterAsset?.referenceAssetId,
+          generationMode: targetReferenceId ? 'character-action' : 'standard',
+          identityConstraints,
+          preserveColors,
+          preservePose,
+          referenceAssetId: targetReferenceId,
           referenceWeight: 0.55,
+          sceneContext,
+          sceneImageDataUrl,
         }),
       })
       if (!response.ok) {
@@ -401,7 +738,9 @@ function App() {
       replaceLayerAsset(target.id, {
         assetUrl: payload.asset.url,
         source: payload.asset.source,
-        prompt: command.prompt ?? target.prompt,
+        prompt: enhancedPrompt,
+        negativePrompt,
+        semanticDescription: enhancedPrompt,
       })
       setStatus(`已重新生成${target.name}`)
       return
@@ -485,20 +824,42 @@ function App() {
           text: transcript,
           context: {
             selectedLayerId: project.selectedLayerId,
-            recentLayers: project.recentLayerIds
-              .map((id) => project.layers.find((layer) => layer.id === id))
-              .filter((layer): layer is Layer => Boolean(layer))
-              .map(({ id, name, type, prompt, x, y, width, height }) => ({
-                id,
-                name,
-                type,
-                prompt,
-                x,
-                y,
-                width,
-                height,
-              })),
+            recentLayers: [...project.layers]
+              .sort((left, right) => right.zIndex - left.zIndex)
+              .slice(0, 20)
+              .map(
+                ({
+                  id,
+                  name,
+                  type,
+                  prompt,
+                  semanticDescription,
+                  textContent,
+                  x,
+                  y,
+                  width,
+                  height,
+                  rotation,
+                  zIndex,
+                }) => ({
+                  id,
+                  name,
+                  type,
+                  prompt,
+                  semanticDescription,
+                  textContent,
+                  x,
+                  y,
+                  width,
+                  height,
+                  rotation,
+                  zIndex,
+                }),
+              ),
             globalStyle: project.globalStyle,
+            creativeDirection: project.memory.creativeDirection,
+            sceneSummary: project.memory.sceneSummary,
+            canvas: project.canvas,
           },
         }),
       })
@@ -509,6 +870,12 @@ function App() {
         return
       }
       const payload = (await response.json()) as { command: DrawingCommand }
+      rememberIntent({
+        text: transcript,
+        creativeDirection: payload.command.creativeDirection,
+        sceneSummary: payload.command.sceneSummary,
+        style: payload.command.style,
+      })
       if (await runCommand(payload.command)) setText('')
     } catch {
       setStatus('指令服务不可用，作品已保留，请稍后重试。')
@@ -738,7 +1105,10 @@ function App() {
           ) : null}
         </section>
 
-        <LayerPanel project={project} execute={runCommand} />
+        <div className="right-sidebar">
+          <MemoryPanel project={project} />
+          <LayerPanel project={project} execute={runCommand} />
+        </div>
       </div>
     </main>
   )

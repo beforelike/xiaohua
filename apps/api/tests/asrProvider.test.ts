@@ -11,6 +11,8 @@ const localConfig = {
   COMMAND_PROVIDER: 'rules',
   LLM_ENHANCE_PROMPT: false,
   IMAGE_PROVIDER: 'mock',
+  GEMINI_IMAGE_BASE_URL: 'http://127.0.0.1:8045/v1',
+  GEMINI_IMAGE_MODEL: 'gemini-3-pro-image',
   SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
   SD_STEPS: 28,
   SD_CFG_SCALE: 7,

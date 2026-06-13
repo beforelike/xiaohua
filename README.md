@@ -25,12 +25,13 @@ P1 本地可演示闭环已完成：分层画布、文本与语音命令、目�
 - 画布：Konva / react-konva
 - 状态管理：Zustand
 - 语音识别：端侧 VAD 自动截句并上传本地 ASR，浏览器 Web Speech API 仅作可选降级
-- 图片生成：本地 Stable Diffusion WebUI REST API
+- 图片生成：本地 Gemini OpenAI 兼容网关为主，Stable Diffusion WebUI 降级
+- 图像处理：OpenCV + rembg 透明抠图、残留清理和素材质量门禁
 - 服务端：Node.js 本地 API 层，统一调用 ASR、指令解析和图片生成
 - 测试：Vitest、React Testing Library、Playwright
 - 代码质量：ESLint、Prettier、TypeScript 严格模式
 
-第三方依赖只负责基础框架、画布渲染、状态管理和测试。项目原创部分包括语音指令协议、上下文目标解析、分层对象模型、命令执行器、生成降级链路及作品导出流程。
+第三方依赖只负责基础框架、画布渲染、状态管理和测试。项目原创部分包括作品记忆、全画面上下文、自然语言指令协议、分层对象与父子配饰模型、命令执行器、生成质量门禁、降级链路及作品导出流程。
 
 ## 快速运行
 

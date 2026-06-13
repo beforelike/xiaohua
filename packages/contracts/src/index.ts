@@ -17,7 +17,19 @@ export const layerSchema = z.object({
   type: layerTypeSchema,
   assetUrl: z.string().min(1).optional(),
   prompt: z.string().max(2000).optional(),
+  negativePrompt: z.string().max(2000).optional(),
+  semanticDescription: z.string().max(2000).optional(),
   characterAssetId: z.string().min(1).optional(),
+  parentLayerId: z.string().min(1).optional(),
+  relation: z.string().max(200).optional(),
+  textContent: z.string().max(500).optional(),
+  fontFamily: z.string().max(120).optional(),
+  fontSize: z.number().positive().max(512).optional(),
+  fontWeight: z.enum(['normal', 'bold']).optional(),
+  fill: z.string().max(80).optional(),
+  align: z.enum(['left', 'center', 'right']).optional(),
+  stroke: z.string().max(80).optional(),
+  strokeWidth: z.number().min(0).max(32).optional(),
   source: z.enum(['generated', 'preset', 'user']),
   status: assetStatusSchema,
   x: z.number(),
@@ -47,6 +59,14 @@ export const characterAssetSchema = z.object({
   updatedAt: z.iso.datetime(),
 })
 
+export const projectMemorySchema = z.object({
+  creativeDirection: z.string().max(1000).default(''),
+  sceneSummary: z.string().max(2000).default(''),
+  palette: z.array(z.string().max(80)).max(12).default([]),
+  lighting: z.string().max(500).default(''),
+  recentIntents: z.array(z.string().max(500)).max(20).default([]),
+})
+
 export const projectSchema = z
   .object({
     schemaVersion: z.literal(schemaVersion),
@@ -54,6 +74,13 @@ export const projectSchema = z
     title: z.string().trim().min(1).max(120),
     canvas: canvasSettingsSchema,
     globalStyle: z.string().max(500),
+    memory: projectMemorySchema.default({
+      creativeDirection: '',
+      sceneSummary: '',
+      palette: [],
+      lighting: '',
+      recentIntents: [],
+    }),
     characterAssets: z.array(characterAssetSchema).max(50).default([]),
     layers: z.array(layerSchema),
     selectedLayerId: z.string().min(1).nullable(),
@@ -145,6 +172,8 @@ export const drawingCommandSchema = z.object({
   prompt: z.string().max(2000).optional(),
   /** LLM 根据用户语义和项目上下文确定的统一英文画风描述 */
   style: z.string().max(500).optional(),
+  creativeDirection: z.string().max(1000).optional(),
+  sceneSummary: z.string().max(2000).optional(),
   /** 当action为create时，LLM可返回多个分离的对象 */
   objects: z.array(sceneObjectSchema).max(10).optional(),
   properties: z
@@ -156,6 +185,13 @@ export const drawingCommandSchema = z.object({
       width: z.number().positive().optional(),
       height: z.number().positive().optional(),
       color: z.string().max(80).optional(),
+      text: z.string().max(500).optional(),
+      fontFamily: z.string().max(120).optional(),
+      fontSize: z.number().positive().max(512).optional(),
+      fontWeight: z.enum(['normal', 'bold']).optional(),
+      align: z.enum(['left', 'center', 'right']).optional(),
+      stroke: z.string().max(80).optional(),
+      strokeWidth: z.number().min(0).max(32).optional(),
       rotation: z.number().optional(),
       scaleDelta: z.number().optional(),
       name: z.string().trim().min(1).max(80).optional(),
@@ -178,14 +214,21 @@ export const parseCommandRequestSchema = z.object({
           name: z.string().min(1),
           type: layerTypeSchema,
           prompt: z.string().max(2000).optional(),
+          semanticDescription: z.string().max(2000).optional(),
+          textContent: z.string().max(500).optional(),
           x: z.number().optional(),
           y: z.number().optional(),
           width: z.number().positive().optional(),
           height: z.number().positive().optional(),
+          rotation: z.number().optional(),
+          zIndex: z.number().int().nonnegative().optional(),
         }),
       )
       .max(20),
     globalStyle: z.string().max(500),
+    creativeDirection: z.string().max(1000).optional(),
+    sceneSummary: z.string().max(2000).optional(),
+    canvas: canvasSettingsSchema.optional(),
   }),
 })
 
@@ -207,8 +250,25 @@ export const generateAssetRequestSchema = z.object({
     .enum(['standard', 'character-sheet', 'character-action'])
     .optional(),
   /** character-action 使用的角色设定图素材 ID */
-  referenceAssetId: z.string().regex(/^[a-f0-9]{24}$/).optional(),
+  referenceAssetId: z
+    .string()
+    .regex(/^[a-f0-9]{24}$/)
+    .optional(),
   referenceWeight: z.number().min(0.1).max(2).optional(),
+  /** 当前完整画面的语义摘要，用于新增和改图时保持作品一致。 */
+  sceneContext: z.string().max(5000).optional(),
+  /** 当前画布预览，供支持多模态输入的图片模型理解整体构图。 */
+  sceneImageDataUrl: z
+    .string()
+    .regex(/^data:image\/(?:png|jpeg|jpg|webp);base64,/)
+    .max(12_000_000)
+    .optional(),
+  /** 修改时必须保留的角色身份特征。 */
+  identityConstraints: z.string().max(2000).optional(),
+  /** 非改色任务启用 OpenCV 主色一致性校验。 */
+  preserveColors: z.boolean().optional(),
+  /** 未要求改变动作时校验主体轮廓规模，拦截重复主体。 */
+  preservePose: z.boolean().optional(),
 })
 
 export const generatedAssetSchema = z.object({
@@ -265,6 +325,7 @@ export const appStatusSchema = z.object({
 export type CanvasSettings = z.infer<typeof canvasSettingsSchema>
 export type Layer = z.infer<typeof layerSchema>
 export type CharacterAsset = z.infer<typeof characterAssetSchema>
+export type ProjectMemory = z.infer<typeof projectMemorySchema>
 export type Project = z.infer<typeof projectSchema>
 export type SceneObject = z.infer<typeof sceneObjectSchema>
 export type DrawingCommand = z.infer<typeof drawingCommandSchema>

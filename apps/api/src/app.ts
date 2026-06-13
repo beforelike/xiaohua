@@ -143,7 +143,7 @@ export function createApp(config: AppConfig) {
     }
     next()
   })
-  app.use(express.json({ limit: '1mb' }))
+  app.use(express.json({ limit: '15mb' }))
 
   app.get('/api/health', (_request, response) => {
     response.json({
@@ -217,7 +217,10 @@ export function createApp(config: AppConfig) {
       const simpleObject = command
         ? simpleObjectForCommand(command, input.text)
         : null
-      if (command && simpleObject) {
+      const canEnhance =
+        config.LLM_ENHANCE_PROMPT &&
+        Boolean(config.LLM_BASE_URL && config.LLM_MODEL && config.LLM_API_KEY)
+      if (command && simpleObject && !canEnhance) {
         command = {
           ...command,
           style: input.context.globalStyle || config.SD_STYLE_PROMPT,
@@ -231,8 +234,8 @@ export function createApp(config: AppConfig) {
       if (
         command &&
         command.action === 'create' &&
-        !simpleObject &&
-        config.LLM_ENHANCE_PROMPT &&
+        command.objectType !== 'text' &&
+        canEnhance &&
         config.LLM_BASE_URL &&
         config.LLM_MODEL &&
         config.LLM_API_KEY
@@ -247,7 +250,11 @@ export function createApp(config: AppConfig) {
           if (enhanced.objects.length > 0) {
             command = {
               ...command,
+              objectType: 'image',
+              requiresGeneration: true,
               style: enhanced.style,
+              creativeDirection: enhanced.creativeDirection,
+              sceneSummary: enhanced.sceneSummary,
               objects: enhanced.objects,
             }
           }
@@ -300,7 +307,12 @@ export function createApp(config: AppConfig) {
         })
         .parse(request.body)
 
-      if (!config.LLM_BASE_URL || !config.LLM_MODEL || !config.LLM_API_KEY) {
+      if (
+        !config.LLM_ENHANCE_PROMPT ||
+        !config.LLM_BASE_URL ||
+        !config.LLM_MODEL ||
+        !config.LLM_API_KEY
+      ) {
         response.status(503).json({
           error: {
             code: 'INTERNAL_ERROR',
@@ -319,6 +331,8 @@ export function createApp(config: AppConfig) {
           selectedLayerId: null,
           recentLayers: [],
           globalStyle: body.globalStyle,
+          creativeDirection: '',
+          sceneSummary: '',
         },
         config,
       )
@@ -337,10 +351,17 @@ export function createApp(config: AppConfig) {
           prompt: z.string().min(1).max(500),
           background: z.enum(['transparent', 'opaque']),
           globalStyle: z.string().max(500).default(''),
+          previousPrompt: z.string().max(2000).default(''),
+          sceneContext: z.string().max(5000).default(''),
         })
         .parse(request.body)
 
-      if (!config.LLM_BASE_URL || !config.LLM_MODEL || !config.LLM_API_KEY) {
+      if (
+        !config.LLM_ENHANCE_PROMPT ||
+        !config.LLM_BASE_URL ||
+        !config.LLM_MODEL ||
+        !config.LLM_API_KEY
+      ) {
         response.status(503).json({
           error: {
             code: 'INTERNAL_ERROR',
@@ -357,6 +378,8 @@ export function createApp(config: AppConfig) {
         body.prompt,
         body.background,
         body.globalStyle,
+        body.previousPrompt,
+        body.sceneContext,
         config,
       )
       response.json(result)

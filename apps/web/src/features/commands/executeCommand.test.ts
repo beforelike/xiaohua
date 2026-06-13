@@ -209,4 +209,122 @@ describe('executeCommand', () => {
     ])
     expect(result.project.layers.map((layer) => layer.zIndex)).toEqual([0, 1])
   })
+
+  it('edits text content and styling locally', () => {
+    let project = createProject('测试', factory)
+    project = addLayer(
+      project,
+      createLayer(
+        project,
+        {
+          id: 'title',
+          name: '标题',
+          type: 'text',
+          source: 'user',
+          textContent: '旧标题',
+          width: 400,
+          height: 120,
+          createdBy: 'voice',
+        },
+        { now: () => now },
+      ),
+      now,
+    )
+
+    const result = executeCommand(
+      project,
+      command({
+        action: 'modify',
+        target: { id: 'title' },
+        properties: {
+          text: '今天也要开心',
+          color: '#ef4444',
+          fontSize: 72,
+          fontWeight: 'bold',
+        },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.project.layers[0]).toMatchObject({
+      textContent: '今天也要开心',
+      fill: '#ef4444',
+      fontSize: 72,
+      fontWeight: 'bold',
+      semanticDescription: '文字“今天也要开心”',
+    })
+  })
+
+  it('moves attached accessory layers with their parent and deletes them together', () => {
+    let project = createProject('测试', factory)
+    const cat = createLayer(
+      project,
+      {
+        id: 'cat',
+        name: '小猫',
+        type: 'image',
+        source: 'generated',
+        width: 300,
+        height: 300,
+        x: 200,
+        y: 200,
+        createdBy: 'voice',
+      },
+      { now: () => now },
+    )
+    project = addLayer(project, cat, now)
+    const scarf = createLayer(
+      project,
+      {
+        id: 'scarf',
+        name: '红色围巾',
+        type: 'image',
+        source: 'generated',
+        parentLayerId: 'cat',
+        relation: 'attached-to:小猫',
+        width: 180,
+        height: 66,
+        x: 260,
+        y: 284,
+        createdBy: 'voice',
+      },
+      { now: () => now },
+    )
+    project = addLayer(project, scarf, now)
+
+    const moved = executeCommand(
+      project,
+      command({
+        action: 'modify',
+        target: { id: 'cat' },
+        properties: { position: 'right', size: 'larger' },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+    expect(moved.ok).toBe(true)
+    if (!moved.ok) return
+    const movedCat = moved.project.layers.find((layer) => layer.id === 'cat')!
+    const movedScarf = moved.project.layers.find(
+      (layer) => layer.id === 'scarf',
+    )!
+    expect(movedScarf.parentLayerId).toBe('cat')
+    expect(movedScarf.x).toBeGreaterThan(movedCat.x)
+    expect(movedScarf.width).toBeCloseTo(207)
+
+    const deleted = executeCommand(
+      moved.project,
+      command({
+        action: 'delete',
+        target: { id: 'cat' },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+    expect(deleted.ok).toBe(true)
+    if (deleted.ok) expect(deleted.project.layers).toHaveLength(0)
+  })
 })
