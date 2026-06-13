@@ -31,6 +31,7 @@ async function createConfig(
     IMAGE_PROVIDER: imageProvider,
     GEMINI_IMAGE_BASE_URL: 'http://127.0.0.1:8045/v1',
     GEMINI_IMAGE_MODEL: 'gemini-3-pro-image',
+    GEMINI_VISION_MODEL: 'gemini-3-flash',
     SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
     SD_STEPS: 28,
     SD_CFG_SCALE: 7,
@@ -241,6 +242,80 @@ describe('imageGeneration', () => {
     )
   })
 
+  it('retries Gemini when the semantic audit rejects an unclear action', async () => {
+    const config = {
+      ...(await createConfig()),
+      IMAGE_PROVIDER: 'gemini-image' as const,
+      GEMINI_IMAGE_API_KEY: 'local-test-key',
+    }
+    const png = await coloredSubjectPng()
+    const imageResponse = () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `data:image/png;base64,${png.toString('base64')}`,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    const auditResponse = (actionClearlyVisible: boolean) =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  subjectCount: 1,
+                  matchesRequestedSubject: true,
+                  actionClearlyVisible,
+                  identityPreserved: true,
+                  issues: actionClearlyVisible
+                    ? []
+                    : ['head direction is level'],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(imageResponse())
+      .mockResolvedValueOnce(auditResponse(false))
+      .mockResolvedValueOnce(imageResponse())
+      .mockResolvedValueOnce(auditResponse(true))
+
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'gemini-action-audit',
+        prompt: '一只橙色小狐狸低头看地面',
+      },
+      config,
+      fetcher,
+    )
+
+    expect(asset.source).toBe('generated')
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    const auditBody = JSON.parse(
+      fetcher.mock.calls[1]?.[1]?.body as string,
+    ) as {
+      model: string
+      messages: Array<{
+        content: Array<{ type: string; text?: string }>
+      }>
+    }
+    expect(auditBody.model).toBe('gemini-3-flash')
+    expect(auditBody.messages[0]?.content[0]?.text).toContain(
+      'literal and unmistakably visible',
+    )
+  })
+
   it('uses a local vector preset for common foreground objects before calling Gemini', async () => {
     const config = {
       ...(await createConfig()),
@@ -374,6 +449,8 @@ describe('imageGeneration', () => {
         commandId: 'visual-context',
         background: 'opaque',
         referenceAssetId: referenceId,
+        preserveColors: true,
+        preservePose: false,
         sceneContext: '秋日森林，暖色侧光，树在画面左侧',
         sceneImageDataUrl: `data:image/png;base64,${reference.toString('base64')}`,
       },
@@ -391,6 +468,12 @@ describe('imageGeneration', () => {
       }>
     }
     expect(body.messages[0]?.content[0]?.text).toContain('秋日森林')
+    expect(body.messages[0]?.content[0]?.text).toContain(
+      'The old pose and old head direction are forbidden',
+    )
+    expect(body.messages[0]?.content[0]?.text).toContain(
+      'Keep the same recognizable individual',
+    )
     expect(
       body.messages[0]?.content.filter((item) => item.type === 'image_url'),
     ).toHaveLength(2)

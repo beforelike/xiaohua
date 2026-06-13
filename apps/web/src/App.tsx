@@ -199,6 +199,10 @@ function App() {
   const canvasRef = useRef<LayerCanvasHandle>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const commandInFlightRef = useRef(false)
+  const pendingIntentRef = useRef<{
+    text: string
+    command: DrawingCommand
+  } | null>(null)
   const lastVoiceTranscriptRef = useRef({ text: '', receivedAt: 0 })
   const [pending, setPending] = useState<{
     command: DrawingCommand
@@ -208,11 +212,11 @@ function App() {
   const executeCommand = async (
     command: DrawingCommand,
     confirmed = false,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     if (!confirmed && command.confidence < 0.75) {
       setPending({ command })
       setStatus('这条指令的理解置信度较低，请确认后执行。')
-      return
+      return false
     }
     if (command.action === 'create') {
       if (command.objectType === 'text') {
@@ -225,7 +229,7 @@ function App() {
           )
         if (!content) {
           setStatus('请告诉我需要添加的文字内容。')
-          return
+          return false
         }
         const layer = addReadyLayer({
           name: command.properties?.name ?? content.slice(0, 20),
@@ -256,7 +260,7 @@ function App() {
           })
         }
         setStatus(`已添加文字“${content}”`)
-        return
+        return true
       }
 
       const sceneContext = buildSceneContext(useProjectStore.getState().project)
@@ -310,8 +314,13 @@ function App() {
                 }),
               })
               if (!anchorResponse.ok) {
-                setStatus(`建立“${obj.name}”身份锚点失败，作品未修改。`)
-                return
+                setStatus(
+                  await readApiError(
+                    anchorResponse,
+                    `建立“${obj.name}”身份锚点失败，作品未修改。`,
+                  ),
+                )
+                return false
               }
               const anchorPayload = (await anchorResponse.json()) as {
                 asset: {
@@ -345,8 +354,13 @@ function App() {
                 }),
               })
               if (!turnaroundResponse.ok) {
-                setStatus(`建立“${obj.name}”三视图失败，作品未修改。`)
-                return
+                setStatus(
+                  await readApiError(
+                    turnaroundResponse,
+                    `建立“${obj.name}”三视图失败，作品未修改。`,
+                  ),
+                )
+                return false
               }
               const turnaroundPayload = (await turnaroundResponse.json()) as {
                 asset: {
@@ -392,8 +406,13 @@ function App() {
               }),
             })
             if (!response.ok) {
-              setStatus(`生成“${obj.name}”失败，作品未修改。`)
-              return
+              setStatus(
+                await readApiError(
+                  response,
+                  `生成“${obj.name}”失败，作品未修改。`,
+                ),
+              )
+              return false
             }
             const payload = (await response.json()) as {
               asset: { url: string; source: 'generated' | 'preset' }
@@ -409,7 +428,7 @@ function App() {
             setStatus(`已完成 ${completedObjects}/${totalObjects} 个对象…`)
           } catch {
             setStatus(`生成“${obj.name}”时出错，作品未修改。`)
-            return
+            return false
           }
         }
         const placedLayers = [...useProjectStore.getState().project.layers]
@@ -449,7 +468,7 @@ function App() {
         if (results.length === 0) {
           setStatus('没有可生成的对象，请换一种描述。')
         }
-        return
+        return results.length > 0
       }
 
       // 单对象创建流程（回退）
@@ -466,7 +485,7 @@ function App() {
                 : {}),
             })
           }
-          return
+          return false
         }
         relationTarget = resolution.layer
       }
@@ -488,7 +507,7 @@ function App() {
       })
       if (!response.ok) {
         setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
-        return
+        return false
       }
       const payload = (await response.json()) as {
         asset: { url: string; source: 'generated' | 'preset' }
@@ -531,7 +550,7 @@ function App() {
         })
       }
       setStatus('新素材已经加入画布')
-      return
+      return true
     }
     if (command.action === 'modify' && command.requiresGeneration) {
       const resolution = resolveTarget(project, command.target)
@@ -545,7 +564,7 @@ function App() {
               : {}),
           })
         }
-        return
+        return false
       }
       const target = resolution.layer
       if (target.type === 'text') {
@@ -554,7 +573,7 @@ function App() {
           requiresGeneration: false,
         })
         setStatus(result.message)
-        return
+        return result.ok
       }
       const accessory = accessoryFromInstruction(command.prompt)
       if (accessory) {
@@ -576,7 +595,7 @@ function App() {
             createdBy: 'voice',
           })
           setStatus(`已为${target.name}添加独立配饰“${accessory}”`)
-          return
+          return true
         }
         let accessoryPrompt = `one ${accessory}, wearable accessory only, designed to fit ${target.name}, isolated object, centered, complete accessory visible, no character, no animal, no person, pure white background`
         let accessoryNegativePrompt = `${target.name}, cat, dog, animal, person, body, face, multiple accessories, text, frame, background`
@@ -624,7 +643,7 @@ function App() {
           setStatus(
             await readApiError(response, '配饰生成失败，原对象保持不变。'),
           )
-          return
+          return false
         }
         const payload = (await response.json()) as {
           asset: { url: string; source: 'generated' | 'preset' }
@@ -643,7 +662,7 @@ function App() {
           createdBy: 'voice',
         })
         setStatus(`已为${target.name}添加独立配饰“${accessory}”`)
-        return
+        return true
       }
       const requestedColor = command.properties?.color
       if (requestedColor && target.assetUrl) {
@@ -660,7 +679,7 @@ function App() {
             semanticDescription: `${target.semanticDescription ?? target.prompt ?? target.name}，本地改色为${requestedColor}`,
           })
           setStatus(`已将${target.name}改成指定颜色`)
-          return
+          return true
         }
       }
       const characterAsset = target.characterAssetId
@@ -741,7 +760,7 @@ function App() {
       })
       if (!response.ok) {
         setStatus(await readApiError(response, '重新生成失败，已保留原素材。'))
-        return
+        return false
       }
       const payload = (await response.json()) as {
         asset: { url: string; source: 'generated' | 'preset' }
@@ -751,10 +770,10 @@ function App() {
         source: payload.asset.source,
         prompt: enhancedPrompt,
         negativePrompt,
-        semanticDescription: enhancedPrompt,
+        semanticDescription: command.prompt ?? enhancedPrompt,
       })
       setStatus(`已重新生成${target.name}`)
-      return
+      return true
     }
     if (command.action === 'save') {
       downloadProject(project)
@@ -764,7 +783,7 @@ function App() {
         downloadBlob(blob, `${project.title}.png`)
       }
       setStatus('作品 PNG 和项目文件已导出')
-      return
+      return true
     }
     const result = execute(command)
     setStatus(result.message)
@@ -774,6 +793,7 @@ function App() {
         ...(result.candidates ? { candidates: result.candidates } : {}),
       })
     }
+    return result.ok
   }
 
   const runCommand = async (
@@ -781,8 +801,7 @@ function App() {
     confirmed = false,
   ): Promise<boolean> => {
     try {
-      await executeCommand(command, confirmed)
-      return true
+      return await executeCommand(command, confirmed)
     } catch {
       setStatus('操作失败，作品已保留，请稍后重试。')
       return false
@@ -881,13 +900,17 @@ function App() {
         return
       }
       const payload = (await response.json()) as { command: DrawingCommand }
-      rememberIntent({
-        text: transcript,
-        creativeDirection: payload.command.creativeDirection,
-        sceneSummary: payload.command.sceneSummary,
-        style: payload.command.style,
-      })
-      if (await runCommand(payload.command)) setText('')
+      pendingIntentRef.current = { text: transcript, command: payload.command }
+      if (await runCommand(payload.command)) {
+        rememberIntent({
+          text: transcript,
+          creativeDirection: payload.command.creativeDirection,
+          sceneSummary: payload.command.sceneSummary,
+          style: payload.command.style,
+        })
+        pendingIntentRef.current = null
+        setText('')
+      }
     } catch {
       setStatus('指令服务不可用，作品已保留，请稍后重试。')
     } finally {
@@ -918,7 +941,18 @@ function App() {
       ? { ...pending.command, target: { id: layer.id }, confidence: 1 }
       : { ...pending.command, confidence: 1 }
     setPending(null)
-    await runCommand(command, true)
+    if (await runCommand(command, true)) {
+      const intent = pendingIntentRef.current
+      if (intent) {
+        rememberIntent({
+          text: intent.text,
+          creativeDirection: intent.command.creativeDirection,
+          sceneSummary: intent.command.sceneSummary,
+          style: intent.command.style,
+        })
+      }
+      pendingIntentRef.current = null
+    }
   }
 
   const handleVoiceTranscript = async (transcript: string) => {
@@ -936,6 +970,7 @@ function App() {
     if (pending) {
       if (/^(取消|不用了|算了|停止)$/.test(normalized)) {
         setPending(null)
+        pendingIntentRef.current = null
         setStatus('已取消本次指令。')
         setText('')
         lastVoiceTranscriptRef.current = { text: '', receivedAt: 0 }
@@ -1176,6 +1211,7 @@ function App() {
                 type="button"
                 onClick={() => {
                   setPending(null)
+                  pendingIntentRef.current = null
                   setStatus('已取消本次指令。')
                 }}
               >

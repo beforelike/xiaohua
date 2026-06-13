@@ -1002,5 +1002,10 @@ describe('App', () => {
       await screen.findByText('操作失败，作品已保留，请稍后重试。'),
     ).toBeInTheDocument()
     expect(useProjectStore.getState().project.layers).toHaveLength(0)
+    expect(useProjectStore.getState().project.memory).toMatchObject({
+      creativeDirection: '',
+      sceneSummary: '',
+      recentIntents: [],
+    })
   })
 })

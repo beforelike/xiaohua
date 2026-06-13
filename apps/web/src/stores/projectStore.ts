@@ -143,24 +143,28 @@ export function createProjectStore(
     rememberIntent: (input) => {
       const current = get().project
       const timestamp = now()
-      set({
-        project: {
-          ...current,
-          globalStyle: input.style || current.globalStyle,
-          memory: {
-            ...current.memory,
-            creativeDirection:
-              input.creativeDirection || current.memory.creativeDirection,
-            sceneSummary: input.sceneSummary || current.memory.sceneSummary,
-            recentIntents: [
-              input.text,
-              ...current.memory.recentIntents.filter(
-                (intent) => intent !== input.text,
-              ),
-            ].slice(0, 20),
-          },
-          updatedAt: timestamp,
+      const nextProject = {
+        ...current,
+        globalStyle: input.style || current.globalStyle,
+        memory: {
+          ...current.memory,
+          creativeDirection:
+            input.creativeDirection || current.memory.creativeDirection,
+          sceneSummary:
+            current.layers.length > 0
+              ? current.memory.sceneSummary
+              : input.sceneSummary || current.memory.sceneSummary,
+          recentIntents: [
+            input.text,
+            ...current.memory.recentIntents.filter(
+              (intent) => intent !== input.text,
+            ),
+          ].slice(0, 20),
         },
+        updatedAt: timestamp,
+      }
+      set({
+        project: refreshProjectSceneMemory(nextProject),
       })
     },
     addCharacterAsset: (input) => {

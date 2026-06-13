@@ -185,7 +185,7 @@ def validate_identity(
             cv2.HISTCMP_BHATTACHARYYA,
         )
     )
-    if color_distance > 0.60:
+    if color_distance > 0.45:
         raise ValueError(f"IDENTITY_COLOR_DRIFT:{color_distance:.3f}")
     return {
         "identityColorDistance": color_distance,

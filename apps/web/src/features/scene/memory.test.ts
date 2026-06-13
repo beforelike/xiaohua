@@ -101,6 +101,7 @@ describe('scene memory', () => {
         type: 'image',
         source: 'generated',
         relation: 'right-of:树',
+        semanticDescription: 'a small blue bird with warm golden wing markings',
         width: 160,
         height: 160,
         x: 360,
@@ -115,6 +116,12 @@ describe('scene memory', () => {
     )
 
     expect(project.memory.sceneSummary).toContain('小鸟在树右侧')
+    expect(project.memory.sceneSummary).toContain(
+      'a small blue bird with warm golden wing markings',
+    )
+    expect(project.memory.palette).toEqual(
+      expect.arrayContaining(['蓝色', '黄色']),
+    )
   })
 
   it('keeps grouped object relationships in scene memory', () => {

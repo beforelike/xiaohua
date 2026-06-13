@@ -27,7 +27,7 @@ P1 本地可演示闭环已完成：分层画布、文本与语音命令、目�
 - 状态管理：Zustand
 - 语音识别：端侧 VAD 自动截句并上传本地 ASR，浏览器 Web Speech API 仅作可选降级
 - 图片生成：本地 Gemini OpenAI 兼容网关为主，Stable Diffusion WebUI 降级
-- 图像处理：OpenCV + rembg 透明抠图、残留清理和素材质量门禁
+- 图像处理：OpenCV + rembg 透明抠图、残留清理、身份色漂检测，并由 Gemini Flash 审计主体数量、动作和参考身份
 - 服务端：Node.js 本地 API 层，统一调用 ASR、指令解析和图片生成
 - 测试：Vitest、React Testing Library、Playwright
 - 代码质量：ESLint、Prettier、TypeScript 严格模式

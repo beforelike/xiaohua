@@ -150,6 +150,34 @@ describe('projectStore', () => {
     )
   })
 
+  it('recomputes lighting from a remembered creative direction', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => 'fox', now: () => second },
+    )
+    store.getState().addReadyLayer({
+      name: '小狐狸',
+      type: 'image',
+      source: 'generated',
+      width: 220,
+      height: 220,
+      createdBy: 'voice',
+    })
+
+    store.getState().rememberIntent({
+      text: '画一个月光森林里的小狐狸故事',
+      creativeDirection: '夜晚月光下的安静故事',
+      sceneSummary: '不应覆盖已有图层推导出的场景',
+      style: 'soft hand-painted storybook illustration',
+    })
+
+    expect(store.getState().project.memory.lighting).toBe('夜晚柔和光线')
+    expect(store.getState().project.memory.sceneSummary).toContain('小狐狸')
+    expect(store.getState().project.memory.sceneSummary).not.toContain(
+      '不应覆盖',
+    )
+  })
+
   it('undoes and redoes project mutations while clearing redo after a new edit', () => {
     const ids = ['sun', 'tree'][Symbol.iterator]()
     const store = createProjectStore(

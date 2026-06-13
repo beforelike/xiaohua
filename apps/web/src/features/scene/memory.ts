@@ -1,15 +1,15 @@
 import type { Layer, Project } from '@xiaohua/contracts'
 
 const colorNames: Array<[RegExp, string]> = [
-  [/红|#dc2626|#b91c1c/i, '红色'],
-  [/橙|#ea580c|#e0a44a/i, '橙色'],
-  [/黄|金|#eab308|#ca8a04/i, '黄色'],
-  [/绿|草|树|#16a34a|#506f4b|#66845d|#78936c/i, '绿色'],
-  [/蓝|#2563eb/i, '蓝色'],
-  [/紫|#9333ea|#7c3aed/i, '紫色'],
-  [/粉|#ec4899/i, '粉色'],
-  [/黑|#111827/i, '黑色'],
-  [/白|#fff|#f8fafc/i, '白色'],
+  [/红|\bred\b|#dc2626|#b91c1c/i, '红色'],
+  [/橙|\borange\b|#ea580c|#e0a44a/i, '橙色'],
+  [/黄|金|\byellow\b|\bgold(?:en)?\b|#eab308|#ca8a04/i, '黄色'],
+  [/绿|草|树|\bgreen\b|#16a34a|#506f4b|#66845d|#78936c/i, '绿色'],
+  [/蓝|\bblue\b|#2563eb/i, '蓝色'],
+  [/紫|\bpurple\b|\bviolet\b|#9333ea|#7c3aed/i, '紫色'],
+  [/粉|\bpink\b|#ec4899/i, '粉色'],
+  [/黑|\bblack\b|#111827/i, '黑色'],
+  [/白|\bwhite\b|#fff|#f8fafc/i, '白色'],
 ]
 
 function layerPosition(layer: Layer, project: Project) {
@@ -45,7 +45,10 @@ function layerDescription(layer: Layer, project: Project) {
   if (layer.type === 'text') {
     return `文字“${layer.textContent ?? layer.name}”位于${layerPosition(layer, project)}`
   }
-  return `${layer.name}位于${layerPosition(layer, project)}`
+  const semantic = layer.semanticDescription?.trim()
+  return `${layer.name}位于${layerPosition(layer, project)}${
+    semantic ? `，内容：${semantic.slice(0, 160)}` : ''
+  }`
 }
 
 function inferPalette(project: Project) {

@@ -26,6 +26,8 @@ interface GeminiImageResponse {
 const PROMPT_PIPELINE_VERSION = 11
 const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
+const ACTION_AUDIT_PATTERN =
+  /\b(?:run(?:ning)?|gallop(?:ing)?|fly(?:ing)?|jump(?:ing)?|drink(?:ing)?|swim(?:ming)?|sit(?:ting)?|stand(?:ing)?|crouch(?:ing)?|lie|lying|look(?:ing)?|gaze|gazing|head|muzzle|kneel(?:ing)?|dance|dancing|wave|waving|turn(?:ing)?)\b|奔跑|飞翔|跳跃|喝水|游泳|坐|站|蹲|躺|低头|抬头|仰望|凝视|回头|转身|挥手|舞蹈/i
 
 function animalSpeciesConstraint(prompt: string) {
   if (/\b(?:cat|cats|kitten|kittens)\b|猫/i.test(prompt)) {
@@ -461,8 +463,14 @@ async function generateWithGemini(
     request.referenceAssetId && request.preservePose
       ? 'This is a minimal edit, not a redesign. Preserve the exact single-subject composition, pose, silhouette, scale, face, markings, and camera angle; change only the explicitly requested detail.'
       : undefined,
+    request.referenceAssetId && request.preservePose === false
+      ? 'Use the reference image only for immutable identity, anatomy, face, body proportions, markings, materials, and colors. The old pose and old head direction are forbidden. Repose the same subject so the newly requested action is literal, unmistakable, and visibly different; every limb, head angle, gaze, and body orientation must support the new action.'
+      : undefined,
     request.identityConstraints
       ? `Immutable identity constraints: ${request.identityConstraints}. These are hard requirements, not suggestions.`
+      : undefined,
+    request.referenceAssetId
+      ? 'Do not redesign, age, recolor, change species, change body type, or replace the referenced subject. Keep the same recognizable individual.'
       : undefined,
     request.sceneImageDataUrl
       ? 'The final reference image is the current full canvas. Match its camera, perspective, palette, lighting, rendering language, and available spatial role. Do not copy other objects into this isolated layer.'
@@ -534,6 +542,130 @@ async function generateWithGemini(
     fetcher,
     apiKey,
   )
+}
+
+function jsonObjectFromText(value: unknown) {
+  const text =
+    typeof value === 'string' ? value : value ? JSON.stringify(value) : ''
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  try {
+    return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+async function validateVisualSemantics(
+  input: Buffer,
+  request: GenerateAssetRequest,
+  config: AppConfig,
+  fetcher: typeof fetch,
+  cacheDirectory: string,
+) {
+  const actionRequired = ACTION_AUDIT_PATTERN.test(request.prompt)
+  const identityRequired = Boolean(request.referenceAssetId)
+  if (
+    request.background !== 'transparent' ||
+    (!actionRequired && !identityRequired) ||
+    !config.GEMINI_IMAGE_API_KEY
+  ) {
+    return
+  }
+
+  const candidate = await sharp(input)
+    .flatten({ background: '#ffffff' })
+    .resize(384, 384, { fit: 'contain', background: '#ffffff' })
+    .jpeg({ quality: 82 })
+    .toBuffer()
+  const images: string[] = []
+  if (request.referenceAssetId) {
+    try {
+      const reference = await readFile(
+        path.join(cacheDirectory, `${request.referenceAssetId}.png`),
+      )
+      images.push(`data:image/png;base64,${reference.toString('base64')}`)
+    } catch {
+      // The prompt and ordinary quality gates remain available without it.
+    }
+  }
+  images.push(`data:image/jpeg;base64,${candidate.toString('base64')}`)
+
+  const auditPrompt = [
+    'You are a strict production asset inspector. Judge visible pixels, never trust the text claim.',
+    `Requested asset: ${request.prompt}`,
+    request.identityConstraints
+      ? `Immutable identity requirements: ${request.identityConstraints}`
+      : undefined,
+    identityRequired && images.length > 1
+      ? 'The first image is the original identity reference. The final image is the candidate.'
+      : 'The final image is the candidate.',
+    'For a transparent foreground asset there must be exactly one requested subject. Count miniature copies, secondary depictions, extra bodies, insets, and alternate poses as additional subjects.',
+    actionRequired
+      ? 'The requested pose, head direction, gaze, limb action, and body orientation must be literal and unmistakably visible. A vague, neutral, or contradictory pose fails.'
+      : undefined,
+    'Return strict JSON only: {"subjectCount":1,"matchesRequestedSubject":true,"actionClearlyVisible":true,"identityPreserved":true,"issues":[""]}.',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  try {
+    const response = await fetcher(
+      `${config.GEMINI_IMAGE_BASE_URL.replace(/\/$/, '')}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${config.GEMINI_IMAGE_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: config.GEMINI_VISION_MODEL,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: auditPrompt },
+                ...images.map((url) => ({
+                  type: 'image_url',
+                  image_url: { url },
+                })),
+              ],
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(45_000),
+      },
+    )
+    if (!response.ok) return
+    const payload = (await response.json()) as GeminiImageResponse
+    const result = jsonObjectFromText(payload.choices?.[0]?.message?.content)
+    if (!result) return
+    if (result.subjectCount !== 1) {
+      throw new Error(`SEMANTIC_SUBJECT_COUNT:${String(result.subjectCount)}`)
+    }
+    if (result.matchesRequestedSubject === false) {
+      throw new Error('SEMANTIC_SUBJECT_MISMATCH')
+    }
+    if (actionRequired && result.actionClearlyVisible === false) {
+      throw new Error('SEMANTIC_ACTION_MISMATCH')
+    }
+    if (
+      identityRequired &&
+      images.length > 1 &&
+      result.identityPreserved === false
+    ) {
+      throw new Error('SEMANTIC_IDENTITY_DRIFT')
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('SEMANTIC_')) {
+      throw error
+    }
+    // Semantic audit is an additional guard. Provider outages must not block
+    // the deterministic OpenCV and pixel-quality pipeline.
+  }
 }
 
 export async function validateTransparentCutout(input: Buffer) {
@@ -666,6 +798,7 @@ export async function generateAsset(
     }
   }
 
+  let geminiError: Error | null = null
   if (config.IMAGE_PROVIDER === 'gemini-image') {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -686,6 +819,13 @@ export async function generateAsset(
           })
           .png()
           .toBuffer()
+        await validateVisualSemantics(
+          normalized,
+          request,
+          config,
+          fetcher,
+          cacheDirectory,
+        )
         const semanticCutout =
           request.background === 'transparent'
             ? await removeForegroundWithOpenCv(normalized, {
@@ -720,7 +860,9 @@ export async function generateAsset(
           backgroundRemoved: request.background === 'transparent',
           source: 'generated',
         }
-      } catch {
+      } catch (error) {
+        geminiError =
+          error instanceof Error ? error : new Error('UNKNOWN_GEMINI_ERROR')
         // Retry once without visual inputs. Some compatible gateways interpret
         // reference images as a request for a character sheet instead of an edit.
       }
@@ -833,6 +975,13 @@ export async function generateAsset(
         )
         if (!encoded) throw new Error('SD_EMPTY_IMAGE')
         const generated = Buffer.from(encoded, 'base64')
+        await validateVisualSemantics(
+          generated,
+          request,
+          config,
+          fetcher,
+          cacheDirectory,
+        )
         const semanticCutout =
           request.background === 'transparent'
             ? await removeForegroundWithOpenCv(generated, {
@@ -872,10 +1021,12 @@ export async function generateAsset(
           error instanceof Error ? error : new Error('UNKNOWN_GENERATION_ERROR')
       }
     }
-    throw new ImageGenerationError(
-      `Stable Diffusion WebUI 生成失败：${lastError?.message ?? '未知错误'}`,
-      true,
-    )
+    const webUiFailure = lastError?.message ?? '未知错误'
+    const message =
+      config.IMAGE_PROVIDER === 'gemini-image'
+        ? `图片生成失败：Gemini ${geminiError?.message ?? '未知错误'}；WebUI ${webUiFailure}`
+        : `Stable Diffusion WebUI 生成失败：${webUiFailure}`
+    throw new ImageGenerationError(message, true)
   }
 
   // Mock mode intentionally returns a visible placeholder for tests and demos.
