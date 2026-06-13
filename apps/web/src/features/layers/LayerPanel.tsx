@@ -32,6 +32,7 @@ export function LayerPanel({ project, execute }: LayerPanelProps) {
         {[...project.layers].reverse().map((layer) => (
           <article
             className={`layer-row ${layer.id === project.selectedLayerId ? 'is-selected' : ''}`}
+            data-layer-id={layer.id}
             key={layer.id}
           >
             <button

@@ -55,6 +55,8 @@ npm run build
 npm run test:e2e
 ```
 
+自动化通过后，必须执行目标设备实机测试：运行 `npm run dev`，使用真实 Chrome 或 Edge 打开 `http://127.0.0.1:5173`，完成对应功能的人工交互验收并在 PR 中记录环境、步骤和结果。
+
 ## 文档导航
 
 - [项目准则](docs/constitution.md)
