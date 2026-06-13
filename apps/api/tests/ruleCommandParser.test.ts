@@ -61,6 +61,17 @@ describe('parseRuleCommand', () => {
   })
 
   it.each([
+    '把奔跑的马画成一匹黑马',
+    '给奔跑的马加上金色马鞍',
+    '将太阳涂成橙红色',
+  ])('treats generated edits as modifications: %s', (text) => {
+    expect(parse(text)).toMatchObject({
+      action: 'modify',
+      requiresGeneration: true,
+    })
+  })
+
+  it.each([
     ['把奔跑的马向左移动', 'left'],
     ['把奔跑的马往右放', 'right'],
     ['把奔跑的马移到右上方', 'top-right'],

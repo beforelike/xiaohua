@@ -42,6 +42,9 @@ const SYSTEM_PROMPT = `你是一个专业的绘图指令解析器和 Stable Diff
    - 负向提示词：根据对象类型生成合适的负向词
 
 3. 对于非 create 命令（select/modify/delete/reorder/rename/save等），正常解析即可，不需要 objects 字段。
+   - 用户明确修改、重画、替换或补充已有对象时，必须使用 action="modify"，target 指向 context.recentLayers 中原图层的 id 或 name
+   - "把树画成秋天的树"、"给树加上红叶"、"把它换成卡通风格"都是 modify，不得创建同名新对象或新图层
+   - 只有用户明确要求增加独立的新画面元素时才使用 create
 
 4. JSON 格式规则：
    - schemaVersion 必须为 1

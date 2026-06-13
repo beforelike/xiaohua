@@ -68,6 +68,12 @@ function looksLikeEditInstruction(text: string) {
   return /(?:把|将|让|调整|安排|移动|挪动|挪到|放到|改成|变成|重新)/.test(text)
 }
 
+function looksLikeGeneratedEdit(text: string) {
+  return /(?:重新生成|重新画|重画|重绘|换成|换一个|画成|改成|变成|涂成|加上|添上|改成.*风格|更.*风格)/.test(
+    text,
+  )
+}
+
 export function parseRuleCommand(
   request: ParseCommandRequest,
   id: () => string = randomUUID,
@@ -121,7 +127,7 @@ export function parseRuleCommand(
   }
 
   const position = positionFromText(text)
-  if (/(重新生成|重新画|换成|换一个|改成.*风格|更.*风格)/.test(text)) {
+  if (target && looksLikeGeneratedEdit(text)) {
     return drawingCommandSchema.parse({
       ...base,
       action: 'modify',
@@ -132,7 +138,10 @@ export function parseRuleCommand(
     })
   }
 
-  if (/(?:画(?!面)|添加|加上|加一个|创建)/.test(text)) {
+  if (
+    /(?:画(?!面)|添加|加上|加一个|创建)/.test(text) &&
+    !(target && looksLikeEditInstruction(text))
+  ) {
     const name = presetObjectNames.find((candidate) => text.includes(candidate))
     return drawingCommandSchema.parse({
       ...base,

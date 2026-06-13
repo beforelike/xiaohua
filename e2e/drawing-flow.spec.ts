@@ -48,3 +48,25 @@ test('completes the drawing, command, delete, and save workflow', async ({
   }
   expect(project.layers.map((layer) => layer.name)).toEqual(['草地', '太阳'])
 })
+
+test('regenerates an existing object without creating another layer', async ({
+  page,
+}) => {
+  await page.goto('/')
+
+  const toolbox = page.getByLabel('素材工具箱')
+  await toolbox.getByRole('button', { name: '树' }).click()
+
+  const layerPanel = page.getByLabel('图层面板')
+  const treeLayer = layerPanel.locator('[data-layer-id]')
+  const originalLayerId = await treeLayer.getAttribute('data-layer-id')
+
+  const commandInput = page.getByPlaceholder('例如：把太阳变小一点并移到右上角')
+  await commandInput.fill('把树画成一棵秋天的树')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已重新生成树')).toBeVisible()
+  await expect(page.getByText('1 个图层')).toBeVisible()
+
+  await expect(layerPanel.getByRole('button', { name: /树/ })).toHaveCount(1)
+  await expect(treeLayer).toHaveAttribute('data-layer-id', originalLayerId!)
+})
