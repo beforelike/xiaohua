@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { StrictMode, type PropsWithChildren } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useVoiceInput } from './useVoiceInput'
 
@@ -16,6 +17,7 @@ describe('useVoiceInput', () => {
   )
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     delete window.SpeechRecognition
     delete window.webkitSpeechRecognition
@@ -56,6 +58,29 @@ describe('useVoiceInput', () => {
     }
     vi.stubGlobal('MediaRecorder', Recorder)
 
+    let sampleCount = 0
+    class TestAudioContext {
+      state = 'running'
+
+      createAnalyser() {
+        return {
+          fftSize: 32,
+          getByteTimeDomainData(samples: Uint8Array) {
+            sampleCount += 1
+            samples.fill(sampleCount <= 5 ? 160 : 128)
+          },
+        }
+      }
+
+      createMediaStreamSource() {
+        return { connect: vi.fn() }
+      }
+
+      resume = vi.fn().mockResolvedValue(undefined)
+      close = vi.fn().mockResolvedValue(undefined)
+    }
+    vi.stubGlobal('AudioContext', TestAudioContext)
+
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url =
         typeof input === 'string'
@@ -73,18 +98,21 @@ describe('useVoiceInput', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const onTranscript = vi.fn()
-    const { result } = renderHook(() => useVoiceInput(onTranscript))
+    const { result } = renderHook(() => useVoiceInput(onTranscript), {
+      wrapper: ({ children }: PropsWithChildren) => (
+        <StrictMode>{children}</StrictMode>
+      ),
+    })
 
     await waitFor(() => expect(result.current.mode).toBe('local'))
+    await waitFor(() => expect(result.current.status.phase).toBe('listening'))
+    await waitFor(
+      () => expect(onTranscript).toHaveBeenCalledWith('画一个太阳'),
+      { timeout: 2_500 },
+    )
 
-    await act(async () => result.current.toggle())
     expect(result.current.status.phase).toBe('listening')
-
-    await act(async () => result.current.toggle())
-    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith('画一个太阳'))
-
-    expect(result.current.status.phase).toBe('success')
-    expect(stopTrack).toHaveBeenCalledOnce()
+    expect(stopTrack).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/asr/transcribe',
       expect.objectContaining({
@@ -92,6 +120,9 @@ describe('useVoiceInput', () => {
         headers: { 'content-type': 'audio/webm' },
       }),
     )
+
+    await act(async () => result.current.toggle())
+    expect(stopTrack).toHaveBeenCalledOnce()
   })
 
   it('reports a recoverable text fallback when no speech provider is available', async () => {
