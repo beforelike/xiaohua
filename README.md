@@ -12,7 +12,7 @@ P1 本地可演示闭环已完成：分层画布、文本与语音命令、目�
 
 ## P1 能力
 
-- 语音输入与实时状态反馈
+- 语音输入、端侧静音分句、连续监听与实时状态反馈
 - 自然语言解析为结构化绘图指令
 - 单个透明背景元素生成，失败时使用预设素材降级
 - 图层新增、选择、删除、移动、缩放和层级调整
@@ -24,7 +24,7 @@ P1 本地可演示闭环已完成：分层画布、文本与语音命令、目�
 - 前端：React、TypeScript、Vite
 - 画布：Konva / react-konva
 - 状态管理：Zustand
-- 语音识别：本地 ASR 服务，浏览器 Web Speech API 仅作可选降级
+- 语音识别：端侧 VAD 自动截句并上传本地 ASR，浏览器 Web Speech API 仅作可选降级
 - 图片生成：本地 Stable Diffusion WebUI REST API
 - 服务端：Node.js 本地 API 层，统一调用 ASR、指令解析和图片生成
 - 测试：Vitest、React Testing Library、Playwright
