@@ -69,6 +69,7 @@ npm run test:e2e
 - [快速开始](docs/quickstart.md)
 - [贡献指南](CONTRIBUTING.md)
 - [训练营交付工作流](docs/camp-workflow.md)
+- [纯语音绘图能力设计记录](docs/voice-first-design.md)
 - [原始需求与规范](doc/)
 
 ## 仓库结构

@@ -14,12 +14,13 @@ export function useVoiceInput(onTranscript: (text: string) => void) {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+  const autoStartAttemptedRef = useRef(false)
 
   const browserSpeech = useSpeechRecognition((text) => {
     onTranscript(text)
     setStatus({
       phase: 'success',
-      message: '语音已识别，请确认后执行。',
+      message: '语音已识别，正在执行。',
       recoverable: true,
     })
   })
@@ -73,6 +74,19 @@ export function useVoiceInput(onTranscript: (text: string) => void) {
     }
   }, [browserSpeech.supported])
 
+  useEffect(() => {
+    if (mode !== 'browser' || autoStartAttemptedRef.current) return
+    autoStartAttemptedRef.current = true
+    const started = browserSpeech.start()
+    setStatus({
+      phase: started ? 'listening' : 'idle',
+      message: started
+        ? '持续语音控制已启动，请直接说出绘图指令。'
+        : '请启动麦克风后直接说出绘图指令。',
+      recoverable: true,
+    })
+  }, [browserSpeech, mode])
+
   const finishLocalRecording = async (mimeType: string) => {
     setStatus({
       phase: 'recognizing',
@@ -91,7 +105,7 @@ export function useVoiceInput(onTranscript: (text: string) => void) {
       onTranscript(payload.text)
       setStatus({
         phase: 'success',
-        message: '语音已识别，请确认后执行。',
+        message: '语音已识别，正在执行。',
         recoverable: true,
       })
     } catch {

@@ -87,6 +87,31 @@ function stubApi(
   return fetchMock
 }
 
+class ControlledRecognition {
+  static latest: ControlledRecognition | null = null
+
+  lang = ''
+  continuous = false
+  interimResults = false
+  onresult:
+    | ((event: {
+        results: ArrayLike<ArrayLike<{ transcript: string }>>
+      }) => void)
+    | null = null
+  onerror: (() => void) | null = null
+  onend: (() => void) | null = null
+  start = vi.fn()
+  stop = vi.fn()
+
+  constructor() {
+    ControlledRecognition.latest = this
+  }
+
+  emit(transcript: string) {
+    this.onresult?.({ results: [[{ transcript }]] })
+  }
+}
+
 describe('App', () => {
   beforeEach(() => {
     useProjectStore.getState().replaceProject(
@@ -100,6 +125,9 @@ describe('App', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    delete window.SpeechRecognition
+    delete window.webkitSpeechRecognition
+    ControlledRecognition.latest = null
   })
 
   it('renders the usable drawing workspace', () => {
@@ -344,13 +372,218 @@ describe('App', () => {
     window.SpeechRecognition = Recognition
     render(<App />)
 
-    fireEvent.click(await screen.findByRole('button', { name: '开始语音输入' }))
-
-    expect(start).toHaveBeenCalledOnce()
+    await waitFor(() => expect(start).toHaveBeenCalledOnce())
     expect(
       screen.getByRole('button', { name: '停止语音输入' }),
     ).toBeInTheDocument()
     delete window.SpeechRecognition
+  })
+
+  it('executes a recognized command without clicking the execute button', async () => {
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'voice-create',
+            action: 'create',
+            properties: { name: '太阳' },
+            requiresGeneration: false,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/voice-sun', source: 'generated' },
+        }),
+    })
+    window.SpeechRecognition = ControlledRecognition
+    render(<App />)
+
+    await waitFor(() =>
+      expect(ControlledRecognition.latest?.start).toHaveBeenCalledOnce(),
+    )
+    expect(ControlledRecognition.latest?.continuous).toBe(true)
+
+    await act(async () => {
+      ControlledRecognition.latest?.emit('画一个太阳')
+    })
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers[0]).toMatchObject({
+        name: '太阳',
+        assetUrl: '/api/assets/voice-sun',
+      }),
+    )
+  })
+
+  it('does not start duplicate generation while the same voice command is running', async () => {
+    let finishGeneration!: (response: Response) => void
+    const generation = new Promise<Response>((resolve) => {
+      finishGeneration = resolve
+    })
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url
+      if (url === '/api/asr/health') {
+        return jsonResponse({ provider: 'mock', available: false })
+      }
+      if (url === '/api/commands/parse') {
+        return jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'deduplicated-create',
+            action: 'create',
+            properties: { name: '太阳' },
+            requiresGeneration: false,
+            confidence: 1,
+          },
+        })
+      }
+      if (url === '/api/assets/generate') return generation
+      throw new Error(`Unexpected fetch request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    window.SpeechRecognition = ControlledRecognition
+    render(<App />)
+
+    await waitFor(() =>
+      expect(ControlledRecognition.latest?.start).toHaveBeenCalledOnce(),
+    )
+    act(() => {
+      ControlledRecognition.latest?.emit('画一个太阳')
+    })
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([url]) => url === '/api/assets/generate'),
+      ).toHaveLength(1),
+    )
+
+    act(() => {
+      ControlledRecognition.latest?.emit('画一个太阳')
+    })
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === '/api/commands/parse'),
+    ).toHaveLength(1)
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === '/api/assets/generate'),
+    ).toHaveLength(1)
+
+    finishGeneration(
+      jsonResponse({
+        asset: { url: '/api/assets/deduplicated-sun', source: 'generated' },
+      }),
+    )
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+  })
+
+  it('accepts voice confirmation and cancellation for uncertain commands', async () => {
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'uncertain-voice-create',
+            action: 'create',
+            properties: { name: '云朵' },
+            requiresGeneration: false,
+            confidence: 0.6,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: { url: '/api/assets/voice-cloud', source: 'generated' },
+        }),
+    })
+    window.SpeechRecognition = ControlledRecognition
+    render(<App />)
+
+    await waitFor(() =>
+      expect(ControlledRecognition.latest?.start).toHaveBeenCalledOnce(),
+    )
+    await act(async () => {
+      ControlledRecognition.latest?.emit('可能加一朵云')
+    })
+    expect(
+      await screen.findByRole('button', { name: '确认执行' }),
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      ControlledRecognition.latest?.emit('取消')
+    })
+    expect(screen.queryByLabelText('指令确认')).not.toBeInTheDocument()
+    expect(useProjectStore.getState().project.layers).toHaveLength(0)
+
+    await act(async () => {
+      ControlledRecognition.latest?.emit('可能加一朵云')
+    })
+    await screen.findByRole('button', { name: '确认执行' })
+    await act(async () => {
+      ControlledRecognition.latest?.emit('确认')
+    })
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/assets/generate',
+      expect.anything(),
+    )
+  })
+
+  it('selects an ambiguous target by spoken spatial hint', async () => {
+    const add = useProjectStore.getState().addReadyLayer
+    const sun = {
+      name: '太阳',
+      type: 'preset' as const,
+      source: 'preset' as const,
+      width: 100,
+      height: 100,
+      createdBy: 'voice' as const,
+    }
+    add({ ...sun, id: 'sun-left', x: 20, y: 30 })
+    add({ ...sun, id: 'sun-right', x: 700, y: 40 })
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'voice-delete-sun',
+            action: 'delete',
+            target: { name: '太阳' },
+            requiresGeneration: false,
+            confidence: 1,
+          },
+        }),
+    })
+    window.SpeechRecognition = ControlledRecognition
+    render(<App />)
+
+    await waitFor(() =>
+      expect(ControlledRecognition.latest?.start).toHaveBeenCalledOnce(),
+    )
+    await act(async () => {
+      ControlledRecognition.latest?.emit('删除太阳')
+    })
+    expect(
+      await screen.findAllByRole('button', { name: /选择“太阳”/ }),
+    ).toHaveLength(2)
+
+    await act(async () => {
+      ControlledRecognition.latest?.emit('右边那个')
+    })
+
+    await waitFor(() =>
+      expect(
+        useProjectStore.getState().project.layers.map((layer) => layer.id),
+      ).toEqual(['sun-left']),
+    )
   })
 
   it('keeps the project usable when the command service is slow or unavailable', async () => {

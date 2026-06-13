@@ -87,6 +87,34 @@ function sceneObjectLayout(
   return { ...positions[object.position], width, height }
 }
 
+function voiceCandidateIndex(text: string, candidates: Layer[]): number {
+  const ordinal = /(?:第)?([一二两三四五六七八九\d]+)个/.exec(text)?.[1]
+  const ordinalIndexes: Record<string, number> = {
+    一: 0,
+    二: 1,
+    两: 1,
+    三: 2,
+    四: 3,
+    五: 4,
+    六: 5,
+    七: 6,
+    八: 7,
+    九: 8,
+  }
+  if (ordinal) {
+    return ordinalIndexes[ordinal] ?? Number.parseInt(ordinal, 10) - 1
+  }
+  if (text.includes('左边')) {
+    const leftmost = [...candidates].sort((left, right) => left.x - right.x)[0]
+    return candidates.findIndex((candidate) => candidate.id === leftmost?.id)
+  }
+  if (text.includes('右边')) {
+    const rightmost = [...candidates].sort((left, right) => right.x - left.x)[0]
+    return candidates.findIndex((candidate) => candidate.id === rightmost?.id)
+  }
+  return -1
+}
+
 function App() {
   const project = useProjectStore((state) => state.project)
   const addReadyLayer = useProjectStore((state) => state.addReadyLayer)
@@ -94,11 +122,11 @@ function App() {
   const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
   const execute = useProjectStore((state) => state.execute)
   const [text, setText] = useState('')
-  const [status, setStatus] = useState(
-    '准备好了。添加素材或输入一句绘图指令吧。',
-  )
+  const [status, setStatus] = useState('准备好了，请直接说出绘图指令。')
   const canvasRef = useRef<LayerCanvasHandle>(null)
   const importRef = useRef<HTMLInputElement>(null)
+  const commandInFlightRef = useRef(false)
+  const lastVoiceTranscriptRef = useRef({ text: '', receivedAt: 0 })
   const [pending, setPending] = useState<{
     command: DrawingCommand
     candidates?: Layer[]
@@ -246,21 +274,19 @@ function App() {
             return
           }
         }
-        const results = generated.map(
-          ({ object, asset, characterAssetId }) => {
-            const layout = sceneObjectLayout(object, project)
-            return addReadyLayer({
-              name: object.name,
-              type: 'image',
-              source: asset.source,
-              assetUrl: asset.url,
-              prompt: object.prompt,
-              ...(characterAssetId ? { characterAssetId } : {}),
-              ...layout,
-              createdBy: 'voice',
-            })
-          },
-        )
+        const results = generated.map(({ object, asset, characterAssetId }) => {
+          const layout = sceneObjectLayout(object, project)
+          return addReadyLayer({
+            name: object.name,
+            type: 'image',
+            source: asset.source,
+            assetUrl: asset.url,
+            prompt: object.prompt,
+            ...(characterAssetId ? { characterAssetId } : {}),
+            ...layout,
+            createdBy: 'voice',
+          })
+        })
         if (command.style && command.style !== project.globalStyle) {
           useProjectStore.getState().replaceProject({
             ...useProjectStore.getState().project,
@@ -432,10 +458,15 @@ function App() {
     })
   }
 
-  const submitTextCommand = async (event: FormEvent) => {
-    event.preventDefault()
-    const transcript = text.trim()
+  const submitTranscript = async (rawTranscript: string) => {
+    const transcript = rawTranscript.trim()
     if (!transcript) return
+    if (commandInFlightRef.current) {
+      setStatus('上一条指令仍在执行，请稍候。')
+      return
+    }
+    commandInFlightRef.current = true
+    setText(transcript)
     setStatus('正在理解指令…')
     try {
       const response = await fetch('/api/commands/parse', {
@@ -473,7 +504,14 @@ function App() {
       if (await runCommand(payload.command)) setText('')
     } catch {
       setStatus('指令服务不可用，作品已保留，请稍后重试。')
+    } finally {
+      commandInFlightRef.current = false
     }
+  }
+
+  const submitTextCommand = async (event: FormEvent) => {
+    event.preventDefault()
+    await submitTranscript(text)
   }
 
   const importProject = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -488,11 +526,6 @@ function App() {
     event.target.value = ''
   }
 
-  const speech = useVoiceInput((transcript) => {
-    setText(transcript)
-    setStatus('语音已识别，请确认后执行。')
-  })
-
   const confirmPending = async (layer?: Layer) => {
     if (!pending) return
     const command = layer
@@ -501,6 +534,60 @@ function App() {
     setPending(null)
     await runCommand(command, true)
   }
+
+  const handleVoiceTranscript = async (transcript: string) => {
+    const normalized = transcript.replaceAll(/\s+/g, '')
+    const receivedAt = Date.now()
+    if (
+      normalized === lastVoiceTranscriptRef.current.text &&
+      receivedAt - lastVoiceTranscriptRef.current.receivedAt < 4_000
+    ) {
+      return
+    }
+    lastVoiceTranscriptRef.current = { text: normalized, receivedAt }
+    setText(transcript)
+
+    if (pending) {
+      if (/^(取消|不用了|算了|停止)$/.test(normalized)) {
+        setPending(null)
+        setStatus('已取消本次指令。')
+        setText('')
+        lastVoiceTranscriptRef.current = { text: '', receivedAt: 0 }
+        return
+      }
+      if (
+        !pending.candidates &&
+        /^(确认|确定|执行|没错|是的)$/.test(normalized)
+      ) {
+        await confirmPending()
+        setText('')
+        return
+      }
+      if (pending.candidates) {
+        const candidate =
+          pending.candidates[
+            voiceCandidateIndex(normalized, pending.candidates)
+          ]
+        if (candidate) {
+          await confirmPending(candidate)
+          setText('')
+          return
+        }
+      }
+      setStatus(
+        pending.candidates
+          ? '请说“第一个”“第二个”“左边那个”“右边那个”或“取消”。'
+          : '请说“确认”或“取消”。',
+      )
+      return
+    }
+
+    await submitTranscript(transcript)
+  }
+
+  const speech = useVoiceInput((transcript) => {
+    void handleVoiceTranscript(transcript)
+  })
 
   return (
     <main className="app-shell">
@@ -557,7 +644,7 @@ function App() {
             ))}
           </div>
           <p className="tool-hint">
-            点击素材加入画布。拖动画面中的对象即可调整位置与大小。
+            首次授权后可连续使用语音创作。素材按钮和拖动仅作为调试降级。
           </p>
         </aside>
 
@@ -589,7 +676,7 @@ function App() {
               ◉
             </button>
             <label>
-              <span>语音调试输入</span>
+              <span>语音转写 · 自动执行</span>
               <input
                 value={text}
                 onChange={(event) => setText(event.target.value)}
@@ -621,8 +708,12 @@ function App() {
                 </button>
               ))}
               {!pending.candidates ? (
-                <button type="button" onClick={() => void confirmPending()}>
-                  确认执行
+                <button
+                  type="button"
+                  aria-label="确认执行"
+                  onClick={() => void confirmPending()}
+                >
+                  确认执行（可说“确认”）
                 </button>
               ) : null}
               <button

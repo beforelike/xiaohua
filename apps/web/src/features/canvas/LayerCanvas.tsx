@@ -168,7 +168,7 @@ export const LayerCanvas = forwardRef<LayerCanvasHandle, LayerCanvasProps>(
         {project.layers.length === 0 ? (
           <div className="empty-canvas">
             <span>画布空空的</span>
-            <p>从左侧添加一个预设素材，或在下方输入绘图指令。</p>
+            <p>直接说“画一个太阳”开始创作。</p>
           </div>
         ) : null}
       </div>
