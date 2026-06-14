@@ -62,20 +62,10 @@ npm run test:e2e
 
 ## 文档导航
 
-- [项目准则](docs/constitution.md)
-- [需求规格](docs/spec.md)
-- [需求检查](docs/requirements.md)
-- [技术调研](docs/research.md)
-- [实施方案](docs/plan.md)
 - [数据模型](docs/data-model.md)
 - [API 契约](docs/contracts/api-contract.md)
-- [任务拆解](docs/tasks.md)
-- [P1 验收记录](docs/acceptance-report.md)
 - [快速开始](docs/quickstart.md)
-- [贡献指南](CONTRIBUTING.md)
-- [训练营交付工作流](docs/camp-workflow.md)
 - [纯语音绘图能力设计记录](docs/voice-first-design.md)
-- [原始需求与规范](doc/)
 
 ## 仓库结构
 
@@ -87,12 +77,10 @@ npm run test:e2e
 ├── packages/
 │   └── contracts/           # 共享 Zod Schema 与类型
 ├── e2e/                     # Playwright 演示流程
-├── .github/                 # CI、PR 模板
-├── doc/                     # 训练营提供的原始需求与研发规范
-├── docs/                    # 本项目整理的规格、方案与验收文档
+├── .github/                 # CI
+├── docs/                    # 使用与技术文档
 │   └── contracts/           # 接口契约
 ├── package.json             # npm workspace 与根命令
-├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
 ```
