@@ -9,8 +9,9 @@ import {
   requestedSubjectCount,
 } from './promptComposer'
 import { findPreset } from './promptPresets'
+import { resolveStylePrompt } from './styleProfiles'
 
-export const PROMPT_PIPELINE_VERSION = 14
+export const PROMPT_PIPELINE_VERSION = 15
 
 export function seedFromAssetId(id: string) {
   return Number.parseInt(id.slice(0, 8), 16)
@@ -56,13 +57,16 @@ export function buildGenerationMetadata(input: {
   provider?: AppConfig['IMAGE_PROVIDER']
   prompt: string
   negativePrompt: string
+  style?: string
 }): GenerationMetadata {
   return {
     provider: input.provider ?? input.config.IMAGE_PROVIDER,
     mode: input.request.generationMode ?? 'standard',
     prompt: input.prompt,
     negativePrompt: input.negativePrompt,
-    style: input.request.style ?? input.config.SD_STYLE_PROMPT,
+    style:
+      input.style ??
+      resolveStylePrompt(input.request.style ?? input.config.SD_STYLE_PROMPT),
     seed: seedFromAssetId(input.id),
     width: input.request.width,
     height: input.request.height,
@@ -104,7 +108,7 @@ export function buildGeminiImageTask(input: {
           : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
   const prompt = [
     'You are the visual director for an editable layered artwork.',
-    `Artwork direction: ${input.request.style ?? input.config.SD_STYLE_PROMPT}`,
+    `Artwork direction: ${resolveStylePrompt(input.request.style ?? input.config.SD_STYLE_PROMPT)}`,
     input.request.sceneContext
       ? `Current artwork memory and composition: ${input.request.sceneContext}`
       : undefined,
@@ -150,6 +154,9 @@ export function buildGeminiImageTask(input: {
       provider: 'gemini-image',
       prompt,
       negativePrompt,
+      style: resolveStylePrompt(
+        input.request.style ?? input.config.SD_STYLE_PROMPT,
+      ),
     }),
   }
 }
@@ -163,10 +170,13 @@ export function buildStableDiffusionTask(input: {
   alwaysonScripts?: unknown
 }) {
   const isEnhanced = input.request.enhancedPrompt ?? false
+  const style = resolveStylePrompt(
+    input.request.style ?? input.config.SD_STYLE_PROMPT,
+  )
   const positivePrompt = buildPrompt(
     input.prompt,
     input.request.background,
-    input.request.style ?? input.config.SD_STYLE_PROMPT,
+    style,
     isEnhanced,
     input.request.generationMode,
   )
@@ -183,6 +193,7 @@ export function buildStableDiffusionTask(input: {
     provider: 'stable-diffusion-webui',
     prompt: positivePrompt,
     negativePrompt,
+    style,
   })
 
   return {

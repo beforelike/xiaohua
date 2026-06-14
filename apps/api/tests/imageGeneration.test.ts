@@ -166,6 +166,7 @@ describe('imageGeneration', () => {
       seed: number
     }
     expect(firstBody.prompt).toContain('watercolor')
+    expect(firstBody.prompt).toContain('delicate watercolor painting')
     expect(firstBody.prompt).toContain('isolated object')
     expect(firstBody.negative_prompt).toContain('photo')
     expect(firstBody.seed).toBe(Number.parseInt(first.id.slice(0, 8), 16))
@@ -176,15 +177,17 @@ describe('imageGeneration', () => {
       mode: 'standard',
       prompt: firstBody.prompt,
       negativePrompt: firstBody.negative_prompt,
-      style: 'watercolor',
       seed: firstBody.seed,
       width: 256,
       height: 256,
       steps: config.SD_STEPS,
       cfgScale: config.SD_CFG_SCALE,
       sampler: config.SD_SAMPLER,
-      pipelineVersion: 14,
+      pipelineVersion: 15,
     })
+    expect(first.generation?.style).toContain(
+      'delicate watercolor painting of {prompt}',
+    )
   })
 
   it('adds scene composition constraints to WebUI scene tasks', async () => {
@@ -305,15 +308,17 @@ describe('imageGeneration', () => {
       mode: 'standard',
       prompt: body.messages[0]?.content,
       negativePrompt: '',
-      style: config.SD_STYLE_PROMPT,
       seed: Number.parseInt(asset.id.slice(0, 8), 16),
       width: 256,
       height: 256,
       steps: config.SD_STEPS,
       cfgScale: config.SD_CFG_SCALE,
       sampler: config.SD_SAMPLER,
-      pipelineVersion: 14,
+      pipelineVersion: 15,
     })
+    expect(asset.generation?.style).toContain(
+      'soft hand-painted storybook illustration of {prompt}',
+    )
 
     const cached = await generateAsset(
       { ...request, background: 'opaque' },
