@@ -25,7 +25,10 @@ import {
 } from './features/project/downloads'
 import { resolveTarget } from './features/commands/resolveTarget'
 import { recolorAssetUrl } from './features/assets/recolor'
-import { shouldBuildCharacterAsset } from './features/generation/generationStrategy'
+import {
+  shouldBuildCharacterAsset,
+  shouldGenerateCohesiveScene,
+} from './features/generation/generationStrategy'
 import {
   planLayerRelativeToTarget,
   planGeneratedLayerLayout,
@@ -279,6 +282,81 @@ function App() {
       const sceneImageDataUrl = canvasRef.current?.toDataUrl() ?? undefined
       // 多对象创建流程：当 LLM 返回了 objects 数组时，逐个生成并创建图层
       if (command.objects && command.objects.length > 0) {
+        if (
+          shouldGenerateCohesiveScene(
+            command.objects,
+            command.prompt,
+            project.layers.length > 0,
+          )
+        ) {
+          const subjectNames = command.objects
+            .filter((object) => !object.isBackground)
+            .map((object) => object.name)
+          const scenePrompt = [
+            command.prompt,
+            command.sceneSummary,
+            `Create one complete scene containing ${subjectNames.join('、')}. Their interaction must be the clear visual focus.`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+          setStatus('正在生成完整叙事场景…')
+          try {
+            const response = await fetch('/api/assets/generate', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                schemaVersion: 1,
+                commandId: `${command.id}-cohesive-scene`,
+                prompt: scenePrompt,
+                style: command.style,
+                width: project.canvas.width,
+                height: project.canvas.height,
+                background: 'opaque',
+                enhancedPrompt: true,
+                generationMode: 'scene',
+                sceneContext,
+              }),
+            })
+            if (!response.ok) {
+              setStatus(
+                await readApiError(response, '生成完整场景失败，作品未修改。'),
+              )
+              return false
+            }
+            const payload = (await response.json()) as {
+              asset: { url: string; source: 'generated' | 'preset' }
+            }
+            const layer = addReadyLayer({
+              name: `${subjectNames.join('、')}场景`,
+              type: 'image',
+              source: payload.asset.source,
+              assetUrl: payload.asset.url,
+              prompt: scenePrompt,
+              semanticDescription:
+                command.sceneSummary ?? command.prompt ?? scenePrompt,
+              x: 0,
+              y: 0,
+              width: project.canvas.width,
+              height: project.canvas.height,
+              createdBy: 'voice',
+            })
+            if (command.style && command.style !== project.globalStyle) {
+              useProjectStore.getState().replaceProject(
+                {
+                  ...useProjectStore.getState().project,
+                  globalStyle: command.style,
+                  updatedAt: new Date().toISOString(),
+                },
+                false,
+              )
+            }
+            setStatus(`已生成完整场景“${layer.name}”`)
+            return true
+          } catch {
+            setStatus('生成完整场景时出错，作品未修改。')
+            return false
+          }
+        }
         const totalObjects = command.objects.length
         let completedObjects = 0
         setStatus(`正在生成 ${totalObjects} 个对象 (0/${totalObjects})…`)

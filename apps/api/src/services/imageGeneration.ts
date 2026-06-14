@@ -469,10 +469,16 @@ async function generateWithGemini(
     expectedSubjects === 1
       ? 'the requested foreground subject'
       : `the requested group of exactly ${String(expectedSubjects)} foreground subjects`
+  const generationMode = request.generationMode ?? 'standard'
   const foregroundInstructions =
-    request.background === 'transparent'
-      ? `Render only ${subjectDescription} as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.`
-      : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
+    generationMode === 'scene'
+      ? 'Render the complete requested scene edge to edge as one cohesive image. Include every requested subject and make their spatial relationship and interaction unmistakable. Use one camera, one perspective, unified lighting, consistent scale, natural contact shadows, and a single polished visual style. Compose the subjects and environment together instead of making isolated assets or an empty background plate.'
+      : request.background === 'transparent'
+        ? `Render only ${subjectDescription} as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.`
+        : generationMode === 'character-sheet' ||
+            generationMode === 'character-action'
+          ? 'Render the requested character reference or action image on a plain, unobtrusive studio background. Do not reinterpret it as an environmental background plate.'
+          : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
   const prompt = [
     'You are the visual director for an editable layered artwork.',
     `Artwork direction: ${request.style ?? config.SD_STYLE_PROMPT}`,
@@ -496,7 +502,7 @@ async function generateWithGemini(
     request.referenceAssetId
       ? 'Do not redesign, age, recolor, change species, change body type, add, remove, or replace referenced subjects. Keep the same recognizable individual or group.'
       : undefined,
-    request.sceneImageDataUrl
+    request.sceneImageDataUrl && generationMode !== 'scene'
       ? 'The final reference image is the current full canvas. Match its camera, perspective, palette, lighting, rendering language, and available spatial role. Do not copy other objects into this isolated layer.'
       : undefined,
     request.negativePrompt

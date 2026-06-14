@@ -242,6 +242,62 @@ describe('imageGeneration', () => {
     )
   })
 
+  it('asks Gemini for one cohesive image in scene mode', async () => {
+    const config = {
+      ...(await createConfig()),
+      IMAGE_PROVIDER: 'gemini-image' as const,
+      GEMINI_IMAGE_API_KEY: 'local-test-key',
+    }
+    const png = await sharp({
+      create: {
+        width: 32,
+        height: 24,
+        channels: 3,
+        background: '#876543',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `data:image/png;base64,${png.toString('base64')}`,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    await generateAsset(
+      {
+        ...request,
+        prompt: 'A cat chases a mouse through a rustic kitchen',
+        background: 'opaque',
+        generationMode: 'scene',
+      },
+      config,
+      fetcher,
+    )
+
+    const requestBody = fetcher.mock.calls[0]?.[1]?.body
+    expect(typeof requestBody).toBe('string')
+    const body = JSON.parse(requestBody as string) as {
+      messages: Array<{ content: string }>
+    }
+    expect(body.messages[0]?.content).toContain(
+      'complete requested scene edge to edge as one cohesive image',
+    )
+    expect(body.messages[0]?.content).toContain('interaction unmistakable')
+    expect(body.messages[0]?.content).not.toContain(
+      'environmental background plate',
+    )
+  })
+
   it('retries Gemini when the semantic audit rejects an unclear action', async () => {
     const config = {
       ...(await createConfig()),

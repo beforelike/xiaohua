@@ -257,9 +257,9 @@ export const generateAssetRequestSchema = z.object({
   background: z.enum(['transparent', 'opaque']),
   /** 是否使用LLM增强提示词（当prompt已经是LLM增强后的则为false） */
   enhancedPrompt: z.boolean().optional(),
-  /** 角色生成阶段：设定图或基于设定图派生动作 */
+  /** 生成阶段：完整场景、角色设定图或基于设定图派生动作 */
   generationMode: z
-    .enum(['standard', 'character-sheet', 'character-action'])
+    .enum(['standard', 'scene', 'character-sheet', 'character-action'])
     .optional(),
   /** character-action 使用的角色设定图素材 ID */
   referenceAssetId: z
