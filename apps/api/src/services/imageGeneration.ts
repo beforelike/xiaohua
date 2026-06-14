@@ -10,6 +10,7 @@ import type { AppConfig } from '../config'
 import { requestedSubjectCount } from './promptComposer'
 import {
   buildGeminiImageTask,
+  buildReferenceControlNet,
   buildStableDiffusionTask,
   PROMPT_PIPELINE_VERSION,
 } from './generationTask'
@@ -893,24 +894,11 @@ export async function generateAsset(
           )
           if (!referencePath) throw new Error('INVALID_REFERENCE_ASSET')
           const reference = await readFile(`${referencePath}.png`)
-          alwaysonScripts = {
-            controlnet: {
-              args: [
-                {
-                  enabled: true,
-                  image: reference.toString('base64'),
-                  module: 'reference_only',
-                  model: 'None',
-                  weight: referenceWeight,
-                  resize_mode: 'Crop and Resize',
-                  control_mode: 'My prompt is more important',
-                  guidance_start: 0,
-                  guidance_end: 1,
-                  pixel_perfect: true,
-                },
-              ],
-            },
-          }
+          alwaysonScripts = buildReferenceControlNet({
+            referenceImageBase64: reference.toString('base64'),
+            config,
+            weight: referenceWeight,
+          })
         }
         const generationTask = buildStableDiffusionTask({
           request,

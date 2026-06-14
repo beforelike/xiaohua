@@ -448,53 +448,12 @@ function App() {
                   source: 'generated' | 'preset'
                 }
               }
-              setStatus(
-                `正在建立“${obj.name}”的三视图辅助图 (${completedObjects}/${totalObjects})…`,
-              )
-              const turnaroundResponse = await fetch('/api/assets/generate', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                  schemaVersion: 1,
-                  commandId: `${command.id}-${obj.name}-turnaround`,
-                  prompt: `${identityPrompt}, front view, left side view and rear view reference plate, complete body visible in every view, neutral natural standing pose`,
-                  negativePrompt:
-                    'action scene, dynamic pose, environment, landscape, text, labels, watermark, cropped body, missing limbs, inconsistent views',
-                  style: command.style,
-                  width: 768,
-                  height: 768,
-                  background: 'opaque',
-                  enhancedPrompt: true,
-                  generationMode: 'character-action',
-                  referenceAssetId: anchorPayload.asset.id,
-                  referenceWeight: 0.55,
-                  sceneContext,
-                  sceneImageDataUrl,
-                }),
-              })
-              if (!turnaroundResponse.ok) {
-                markLayerFailed(placeholder.id, `“${obj.name}”三视图生成失败`)
-                setStatus(
-                  await readApiError(
-                    turnaroundResponse,
-                    `建立“${obj.name}”三视图失败，已跳过该对象。`,
-                  ),
-                )
-                continue
-              }
-              const turnaroundPayload = (await turnaroundResponse.json()) as {
-                asset: {
-                  id: string
-                  url: string
-                  source: 'generated' | 'preset'
-                }
-              }
+              // 直接用身份锚点作为 IP-Adapter 参考图登记角色，省去三视图这一额外扩散
+              // 步骤，显著降低延迟；后续同名角色的新动作复用该参考即可保持一致。
               characterAsset = addCharacterAsset({
                 id: crypto.randomUUID(),
                 name: obj.name,
                 identityPrompt,
-                turnaroundAssetId: turnaroundPayload.asset.id,
-                turnaroundAssetUrl: turnaroundPayload.asset.url,
                 referenceAssetId: anchorPayload.asset.id,
                 referenceAssetUrl: anchorPayload.asset.url,
                 style: command.style ?? '',
