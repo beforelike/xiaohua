@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { DrawingCommand } from '@xiaohua/contracts'
-import { simpleObjectForCommand } from '../src/services/simpleObjectCommand'
+import {
+  fallbackObjectsForCommand,
+  simpleObjectForCommand,
+} from '../src/services/simpleObjectCommand'
 
 const command: DrawingCommand = {
   schemaVersion: 1,
@@ -33,4 +36,29 @@ describe('simpleObjectForCommand', () => {
       expect(simpleObjectForCommand(command, text)).toBeNull()
     },
   )
+
+  it('builds editable fallback objects for counted cat interaction requests', () => {
+    const objects = fallbackObjectsForCommand(command, '画两只猫玩耍')
+
+    expect(objects.map((object) => object.name)).toEqual([
+      '背景',
+      '小猫1',
+      '小猫2',
+    ])
+    expect(objects[0]?.background).toBe('opaque')
+    expect(objects[1]?.background).toBe('transparent')
+    expect(objects[2]?.position).toBe('right')
+  })
+
+  it('builds editable fallback objects for counted cat descriptions', () => {
+    const objects = fallbackObjectsForCommand(command, '两只猫')
+
+    expect(objects.map((object) => object.name)).toEqual([
+      '背景',
+      '小猫1',
+      '小猫2',
+    ])
+    expect(objects[1]?.prompt).toContain('one distinct cat')
+    expect(objects[1]?.actionPrompt).toContain('2 distinct cats')
+  })
 })

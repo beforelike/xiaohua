@@ -53,14 +53,14 @@ describe('shouldGenerateCohesiveScene', () => {
     size: 'full',
   }
 
-  it('uses one coherent image for a new relational scene', () => {
+  it('keeps a new relational scene split into editable generated layers', () => {
     expect(
       shouldGenerateCohesiveScene(
         [forest, { ...cat, actionPrompt: 'pouncing' }, mouse],
         '画一只猫追老鼠',
         false,
       ),
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('keeps explicit layered asset requests editable', () => {

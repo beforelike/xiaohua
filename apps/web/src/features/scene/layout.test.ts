@@ -6,6 +6,7 @@ import {
   planGeneratedLayerLayout,
   planLayerRelativeToTarget,
   planSceneObjectLayout,
+  planSceneObjectLayouts,
 } from './layout'
 
 const now = () => '2026-06-14T00:00:00.000Z'
@@ -88,6 +89,38 @@ describe('scene layout planning', () => {
         size: 'medium',
       }),
     ).toMatchObject({ x: 348, y: 392 })
+  })
+
+  it('plans a counted foreground group as one composed scene', () => {
+    const project = createProject('layout-test', { id: () => 'project', now })
+
+    const layouts = planSceneObjectLayouts(project, [
+      {
+        name: '背景',
+        isBackground: true,
+        position: 'center',
+        size: 'full',
+      },
+      {
+        name: '小猫1',
+        isBackground: false,
+        position: 'left',
+        size: 'medium',
+      },
+      {
+        name: '小猫2',
+        isBackground: false,
+        position: 'right',
+        size: 'medium',
+      },
+    ])
+
+    expect(layouts[0]).toEqual({ x: 0, y: 0, width: 1024, height: 768 })
+    expect(layouts[1]?.width).toBeLessThan(328)
+    expect(layouts[1]?.x).toBeGreaterThan(180)
+    expect(layouts[2]?.x).toBeGreaterThan(layouts[1]!.x + layouts[1]!.width)
+    expect(layouts[1]?.y).toBeGreaterThan(300)
+    expect(layouts[2]?.y).toBe(layouts[1]?.y)
   })
 
   it('strongly avoids covering text layers for generated fallback assets', () => {

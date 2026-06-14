@@ -520,6 +520,72 @@ describe('App', () => {
     )
   })
 
+  it('keeps separated placeholders when multi-object generation fails', async () => {
+    stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'two-cats',
+            action: 'create',
+            prompt: '画两只猫在玩耍',
+            objects: [
+              {
+                name: '背景',
+                prompt: 'empty play background',
+                background: 'opaque',
+                isBackground: true,
+                position: 'center',
+                size: 'full',
+              },
+              {
+                name: '小猫1',
+                prompt: 'one distinct cat',
+                background: 'transparent',
+                isBackground: false,
+                position: 'left',
+                size: 'medium',
+              },
+              {
+                name: '小猫2',
+                prompt: 'one distinct cat',
+                background: 'transparent',
+                isBackground: false,
+                position: 'right',
+                size: 'medium',
+              },
+            ],
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () => {
+        throw new TypeError('Fooocus 没有返回生成结果')
+      },
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '画两只猫在玩耍' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(3),
+    )
+    expect(useProjectStore.getState().project.layers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: '背景', status: 'failed' }),
+        expect.objectContaining({ name: '小猫1', status: 'failed' }),
+        expect.objectContaining({ name: '小猫2', status: 'failed' }),
+      ]),
+    )
+    expect(
+      await screen.findByText('已放置 3/3 个对象占位框，但素材生成失败。'),
+    ).toBeInTheDocument()
+  })
+
   it('uses the style automatically selected by the LLM', async () => {
     const fetchMock = stubApi({
       '/api/commands/parse': () =>
@@ -616,7 +682,7 @@ describe('App', () => {
     })
   })
 
-  it('generates a relational scene once instead of assembling isolated assets', async () => {
+  it('generates a relational scene as separated editable assets', async () => {
     const fetchMock = stubApi({
       '/api/commands/parse': () =>
         jsonResponse({
@@ -657,14 +723,21 @@ describe('App', () => {
             confidence: 1,
           },
         }),
-      '/api/assets/generate': () =>
-        jsonResponse({
+      '/api/assets/generate': (init) => {
+        const body = JSON.parse(String(init?.body)) as { prompt: string }
+        const name = body.prompt.includes('kitchen')
+          ? 'kitchen'
+          : body.prompt.includes('mouse')
+            ? 'mouse'
+            : 'cat'
+        return jsonResponse({
           asset: {
             id: 'd'.repeat(24),
-            url: '/api/assets/cohesive-scene',
+            url: `/api/assets/${name}`,
             source: 'generated',
           },
-        }),
+        })
+      },
     })
     render(<App />)
 
@@ -675,32 +748,32 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '执行' }))
 
     await waitFor(() =>
-      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+      expect(useProjectStore.getState().project.layers).toHaveLength(3),
     )
     const generationCalls = fetchMock.mock.calls.filter(
       ([url]) => url === '/api/assets/generate',
     )
-    expect(generationCalls).toHaveLength(1)
-    const body = JSON.parse(String(generationCalls[0]?.[1]?.body)) as {
-      generationMode: string
-      width: number
-      height: number
-      prompt: string
-    }
-    expect(body).toMatchObject({
-      generationMode: 'scene',
-      width: 1024,
-      height: 768,
-    })
-    expect(body.prompt).toContain('猫在厨房里追老鼠')
-    expect(useProjectStore.getState().project.layers[0]).toMatchObject({
-      name: '猫、老鼠场景',
-      assetUrl: '/api/assets/cohesive-scene',
-      x: 0,
-      y: 0,
-      width: 1024,
-      height: 768,
-    })
+    expect(generationCalls).toHaveLength(3)
+    expect(useProjectStore.getState().project.layers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: '厨房',
+          assetUrl: '/api/assets/kitchen',
+          x: 0,
+          y: 0,
+          width: 1024,
+          height: 768,
+        }),
+        expect.objectContaining({
+          name: '猫',
+          assetUrl: '/api/assets/cat',
+        }),
+        expect.objectContaining({
+          name: '老鼠',
+          assetUrl: '/api/assets/mouse',
+        }),
+      ]),
+    )
     expect(useProjectStore.getState().project.characterAssets).toHaveLength(0)
   })
 

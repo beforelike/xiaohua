@@ -14,6 +14,11 @@ interface LayoutInput {
   avoidLayers?: Layer[]
 }
 
+type GroupLayoutInput = Pick<
+  SceneObject,
+  'name' | 'position' | 'size' | 'isBackground'
+>
+
 const margin = 48
 const relationGap = 18
 const minGenerationSide = 256
@@ -24,6 +29,18 @@ const sizeRatio: Record<SceneSize, number> = {
   medium: 0.32,
   large: 0.48,
   full: 1,
+}
+
+const positionRank: Record<ScenePosition, number> = {
+  'top-left': 0,
+  left: 1,
+  'bottom-left': 2,
+  top: 3,
+  center: 4,
+  bottom: 5,
+  'top-right': 6,
+  right: 7,
+  'bottom-right': 8,
 }
 
 const positionPreference: Record<ScenePosition, ScenePosition[]> = {
@@ -142,6 +159,106 @@ export function planSceneObjectLayout(
   )
 
   return candidates.sort((left, right) => left.score - right.score)[0]!.layout
+}
+
+function groupForegroundSide(
+  project: Project,
+  input: GroupLayoutInput,
+  foregroundCount: number,
+) {
+  const requestedSize = input.size ?? 'medium'
+  const baseRatio = sizeRatio[requestedSize]
+  const groupRatio =
+    foregroundCount <= 1
+      ? baseRatio
+      : foregroundCount === 2
+        ? Math.min(baseRatio, 0.28)
+        : foregroundCount === 3
+          ? Math.min(baseRatio, 0.24)
+          : Math.min(baseRatio, 0.2)
+  return Math.round(project.canvas.width * groupRatio)
+}
+
+function groupForegroundY(
+  project: Project,
+  position: ScenePosition | undefined,
+  side: number,
+) {
+  if (position?.startsWith('top') || position === 'top') return margin
+  if (position?.startsWith('bottom') || position === 'bottom') {
+    return project.canvas.height - side - margin
+  }
+  return project.canvas.height - side - Math.round(project.canvas.height * 0.16)
+}
+
+export function planSceneObjectLayouts(
+  project: Project,
+  objects: GroupLayoutInput[],
+  avoidLayers: Layer[] = project.layers,
+): SceneLayout[] {
+  const layouts = new Array<SceneLayout>(objects.length)
+  const foregroundEntries = objects
+    .map((object, index) => ({ object, index }))
+    .filter(
+      ({ object }) =>
+        !object.isBackground && (object.size ?? 'medium') !== 'full',
+    )
+
+  objects.forEach((object, index) => {
+    if (object.isBackground || object.size === 'full') {
+      layouts[index] = {
+        x: 0,
+        y: 0,
+        width: project.canvas.width,
+        height: project.canvas.height,
+      }
+    }
+  })
+
+  if (foregroundEntries.length === 0) return layouts
+  if (foregroundEntries.length === 1) {
+    const [{ object, index }] = foregroundEntries
+    layouts[index] = planSceneObjectLayout(project, {
+      ...object,
+      avoidLayers,
+    })
+    return layouts
+  }
+
+  const ordered = [...foregroundEntries].sort((left, right) => {
+    const leftRank = positionRank[left.object.position ?? 'center']
+    const rightRank = positionRank[right.object.position ?? 'center']
+    return leftRank - rightRank || left.index - right.index
+  })
+  const sides = ordered.map(({ object }) =>
+    groupForegroundSide(project, object, foregroundEntries.length),
+  )
+  const maxSide = Math.max(...sides)
+  const gap = Math.max(24, Math.round(project.canvas.width * 0.04))
+  const totalWidth =
+    sides.reduce((sum, side) => sum + side, 0) + gap * (sides.length - 1)
+  const availableWidth = project.canvas.width - margin * 2
+  const scale = Math.min(1, availableWidth / Math.max(1, totalWidth))
+  const scaledSides = sides.map((side) => Math.round(side * scale))
+  const scaledGap = Math.round(gap * scale)
+  const scaledTotalWidth =
+    scaledSides.reduce((sum, side) => sum + side, 0) +
+    scaledGap * (scaledSides.length - 1)
+  let cursorX = Math.round((project.canvas.width - scaledTotalWidth) / 2)
+
+  ordered.forEach(({ object, index }, orderIndex) => {
+    const side = scaledSides[orderIndex] ?? maxSide
+    const layout = {
+      x: cursorX,
+      y: groupForegroundY(project, object.position, side),
+      width: side,
+      height: side,
+    }
+    layouts[index] = layout
+    cursorX += side + scaledGap
+  })
+
+  return layouts
 }
 
 export function planGeneratedLayerLayout(

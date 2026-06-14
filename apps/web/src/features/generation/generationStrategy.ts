@@ -24,6 +24,17 @@ export function shouldGenerateCohesiveScene(
   userPrompt: string | undefined,
   hasExistingLayers: boolean,
 ) {
+  void objects
+  void userPrompt
+  void hasExistingLayers
+  return false
+}
+
+export function shouldGenerateCohesiveSceneLegacy(
+  objects: SceneObject[],
+  userPrompt: string | undefined,
+  hasExistingLayers: boolean,
+) {
   if (hasExistingLayers || objects.length < 2) return false
   const requestText = [
     userPrompt,
