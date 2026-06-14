@@ -22,7 +22,10 @@ import {
 } from './services/llmPromptEnhancer'
 import { parseRuleCommand } from './services/ruleCommandParser'
 import { normalizeCommandForContext } from './services/commandNormalizer'
-import { simpleObjectForCommand } from './services/simpleObjectCommand'
+import {
+  fallbackObjectsForCommand,
+  simpleObjectForCommand,
+} from './services/simpleObjectCommand'
 import { checkAsrHealth, transcribeAudio } from './services/asrProvider'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -217,15 +220,36 @@ export function createApp(config: AppConfig) {
       const simpleObject = command
         ? simpleObjectForCommand(command, input.text)
         : null
+      const fallbackObjects = command
+        ? fallbackObjectsForCommand(command, input.text)
+        : []
       const canEnhance =
         config.LLM_ENHANCE_PROMPT &&
         Boolean(config.LLM_BASE_URL && config.LLM_MODEL && config.LLM_API_KEY)
-      if (command && simpleObject && !canEnhance) {
+      if (command && fallbackObjects.length > 1) {
+        command = {
+          ...command,
+          objectType: 'image',
+          style: input.context.globalStyle || config.SD_STYLE_PROMPT,
+          objects: fallbackObjects,
+          requiresGeneration: true,
+        }
+      } else if (command && simpleObject && !canEnhance) {
         command = {
           ...command,
           style: input.context.globalStyle || config.SD_STYLE_PROMPT,
           objects: [simpleObject],
           requiresGeneration: true,
+        }
+      } else if (command && !canEnhance) {
+        if (fallbackObjects.length > 0) {
+          command = {
+            ...command,
+            objectType: 'image',
+            style: input.context.globalStyle || config.SD_STYLE_PROMPT,
+            objects: fallbackObjects,
+            requiresGeneration: true,
+          }
         }
       }
 
@@ -235,6 +259,7 @@ export function createApp(config: AppConfig) {
         command &&
         command.action === 'create' &&
         command.objectType !== 'text' &&
+        !command.objects?.length &&
         canEnhance &&
         config.LLM_BASE_URL &&
         config.LLM_MODEL &&

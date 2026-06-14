@@ -300,6 +300,56 @@ describe('API application', () => {
     expect(body.command.objects?.[0]?.prompt).toContain('curious orange kitten')
   })
 
+  it('returns editable fallback layers for counted interactions without an LLM', async () => {
+    const response = await request(createApp(config))
+      .post('/api/commands/parse')
+      .send({
+        schemaVersion: 1,
+        text: '画两只猫玩耍',
+        context: {
+          selectedLayerId: null,
+          recentLayers: [],
+          globalStyle: '',
+        },
+      })
+
+    expect(response.status).toBe(200)
+    const body = z
+      .object({ command: drawingCommandSchema })
+      .parse(response.body)
+    expect(body.command.objects?.map((object) => object.name)).toEqual([
+      '背景',
+      '小猫1',
+      '小猫2',
+    ])
+    expect(body.command.objects?.[0]?.background).toBe('opaque')
+    expect(body.command.objects?.[1]?.background).toBe('transparent')
+  })
+
+  it('returns editable fallback layers for counted descriptions without a drawing verb', async () => {
+    const response = await request(createApp(config))
+      .post('/api/commands/parse')
+      .send({
+        schemaVersion: 1,
+        text: '两只猫',
+        context: {
+          selectedLayerId: null,
+          recentLayers: [],
+          globalStyle: '',
+        },
+      })
+
+    expect(response.status).toBe(200)
+    const body = z
+      .object({ command: drawingCommandSchema })
+      .parse(response.body)
+    expect(body.command.objects?.map((object) => object.name)).toEqual([
+      '背景',
+      '小猫1',
+      '小猫2',
+    ])
+  })
+
   it('falls back to a configured LLM when rules do not understand the command', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

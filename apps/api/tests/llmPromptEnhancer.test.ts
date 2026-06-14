@@ -216,4 +216,53 @@ describe('llmPromptEnhancer', () => {
 
     expect(result.objects.map((object) => object.name)).toEqual(['小猫'])
   })
+
+  it('splits counted interacting cats and keeps an editable background plate', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  style: 'warm storybook illustration, soft daylight',
+                  objects: [
+                    {
+                      name: '两只小猫',
+                      prompt:
+                        'two kittens playing together, orange and white fur, lively poses',
+                      negativePrompt: 'text, watermark',
+                      background: 'transparent',
+                      isBackground: false,
+                      position: 'center',
+                      size: 'medium',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await enhancePrompt(
+      '画两只猫玩耍',
+      '',
+      { selectedLayerId: null, recentLayers: [], globalStyle: '' },
+      config,
+      fetcher,
+    )
+
+    expect(result.objects.map((object) => object.name)).toEqual([
+      '背景',
+      '小猫1',
+      '小猫2',
+    ])
+    expect(result.objects[0]?.isBackground).toBe(true)
+    expect(result.objects[0]?.prompt).toContain('open central space')
+    expect(result.objects[1]?.prompt).toContain('one distinct cat')
+    expect(result.objects[2]?.position).toBe('right')
+  })
 })

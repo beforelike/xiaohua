@@ -87,6 +87,40 @@ const ENVIRONMENT_TERMS =
   /\b(?:river|water|stream|creek|lake|pond|shore|shoreline|riverbank|forest|woodland|trees?|grassland|meadow|landscape|scenery|environment|background|reflection|reflections|ripples?|rocks?|sky|clouds?)\b/i
 const EXPLICIT_ENVIRONMENT_INTENT =
   /(?:背景|场景|草原|草地|草坪|森林|树林|河边|河流|小溪|溪流|湖边|湖泊|海边|海洋|天空|云层|山谷|山脉|街道|房间|室内|庭院|花园|雪地|沙漠)/
+const INTERACTION_INTENT =
+  /(?:玩耍|追逐|打闹|互动|一起|陪伴|对视|看着|望着|拥抱|抱着|争抢|扑|抓|追|play|playing|chase|interact|together|with)/i
+const SUBJECT_UNITS =
+  /[只匹个人位条头羽群]/
+const SUBJECT_ALIASES = [
+  {
+    singular: '小猫',
+    plural: '小猫',
+    zh: /猫|小猫|猫咪/,
+    en: /\b(?:cats?|kittens?|felines?)\b/i,
+    english: 'cat',
+  },
+  {
+    singular: '小狗',
+    plural: '小狗',
+    zh: /狗|小狗|狗狗/,
+    en: /\b(?:dogs?|puppies?)\b/i,
+    english: 'dog',
+  },
+  {
+    singular: '马',
+    plural: '马',
+    zh: /马/,
+    en: /\b(?:horses?)\b/i,
+    english: 'horse',
+  },
+  {
+    singular: '小鸟',
+    plural: '小鸟',
+    zh: /鸟|小鸟/,
+    en: /\b(?:birds?)\b/i,
+    english: 'bird',
+  },
+] as const
 
 function sanitizeForegroundPrompt(prompt: string) {
   const actionSafe = prompt
@@ -121,9 +155,7 @@ function fallbackIdentityPrompt(prompt: string) {
     .replace(/^,\s*|,\s*$/g, '')
 }
 
-function requestedSubjectCount(userPrompt: string) {
-  const horseCount = userPrompt.match(/([一二两三四五六七八九十\d]+)匹马/)
-  if (!horseCount?.[1]) return null
+function parseCount(value: string) {
   const values: Record<string, number> = {
     一: 1,
     二: 2,
@@ -137,8 +169,53 @@ function requestedSubjectCount(userPrompt: string) {
     九: 9,
     十: 10,
   }
-  const parsed = values[horseCount[1]] ?? Number.parseInt(horseCount[1], 10)
+  const parsed = values[value] ?? Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function requestedSubjectCount(userPrompt: string) {
+  const horseCount = userPrompt.match(/([一二两三四五六七八九十\d]+)匹马/)
+  if (!horseCount?.[1]) return null
+  return parseCount(horseCount[1])
+}
+
+function requestedForegroundGroup(userPrompt: string) {
+  const normalized = userPrompt.replaceAll(/\s+/g, '')
+  const chinese = normalized.match(
+    new RegExp(`([一二两三四五六七八九十\\d]+)${SUBJECT_UNITS.source}?([^，。,.、和与一起]+)`),
+  )
+  const count = chinese?.[1] ? parseCount(chinese[1]) : null
+  if (count && count > 1) {
+    const subjectText = chinese?.[2] ?? normalized
+    const subject = SUBJECT_ALIASES.find((candidate) =>
+      candidate.zh.test(subjectText),
+    )
+    if (subject) return { count, subject }
+  }
+
+  const english = userPrompt.match(
+    /\b(?:exactly\s+)?(two|three|four|five|six|seven|eight|nine|ten|[2-9]|10)\s+([a-z]+)\b/i,
+  )
+  if (!english?.[1] || !english[2]) return null
+  const wordCounts: Record<string, number> = {
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+  }
+  const englishCount =
+    wordCounts[english[1].toLocaleLowerCase()] ??
+    Number.parseInt(english[1], 10)
+  if (!Number.isFinite(englishCount) || englishCount < 2) return null
+  const subject = SUBJECT_ALIASES.find((candidate) =>
+    candidate.en.test(english[2] ?? ''),
+  )
+  return subject ? { count: englishCount, subject } : null
 }
 
 function countWord(count: number) {
@@ -172,15 +249,129 @@ function enforceHorseCount(prompt: string, count: number) {
   return `(exactly ${plural}, both horses fully visible:1.4), side by side, standing upright on all four legs, (both heads below chest level, necks extended downward, noses pointing toward the ground:1.5), ${subject}`
 }
 
+function objectMatchesSubject(
+  object: EnhancedObject,
+  subject: (typeof SUBJECT_ALIASES)[number],
+) {
+  return (
+    subject.zh.test(object.name) ||
+    subject.zh.test(object.prompt) ||
+    subject.en.test(object.prompt)
+  )
+}
+
+function splitGroupedForegroundObjects(
+  objects: EnhancedObject[],
+  userPrompt: string,
+) {
+  if (!INTERACTION_INTENT.test(userPrompt)) return objects
+  const group = requestedForegroundGroup(userPrompt)
+  if (!group || group.count > 6) return objects
+  const foregrounds = objects.filter((object) => !object.isBackground)
+  const matchedForegrounds = foregrounds.filter((object) =>
+    objectMatchesSubject(object, group.subject),
+  )
+  if (matchedForegrounds.length !== 1) return objects
+
+  const grouped = matchedForegrounds[0]
+  if (!grouped) return objects
+  const positions: EnhancedObject['position'][] = [
+    'left',
+    'right',
+    'center',
+    'bottom-left',
+    'bottom-right',
+    'top-left',
+  ]
+  const splitObjects = Array.from({ length: group.count }, (_, index) => {
+    const label = `${group.subject.singular}${String(index + 1)}`
+    const counterpart =
+      group.count === 2
+        ? `the other ${group.subject.english}, reciprocal play interaction, facing inward`
+        : `the other ${group.subject.english}s, shared group interaction`
+    return {
+      ...grouped,
+      name: label,
+      position: positions[index] ?? 'center',
+      size: grouped.size === 'full' ? 'medium' : grouped.size,
+      prompt: [
+        grouped.prompt,
+        `one distinct ${group.subject.english} from a ${countWord(group.count)}-${group.subject.english} scene`,
+        counterpart,
+        'complete body visible, isolated foreground asset, transparent background-ready composition',
+      ].join(', '),
+      identityPrompt:
+        grouped.identityPrompt ??
+        `${group.subject.english}, distinct individual design, stable fur pattern and body proportions`,
+      actionPrompt:
+        grouped.actionPrompt ??
+        `playing with ${counterpart}, body language clearly shows the requested interaction`,
+      negativePrompt: [
+        grouped.negativePrompt,
+        `missing ${group.subject.english}, unrelated animal, random object, abstract marks`,
+      ]
+        .filter(Boolean)
+        .join(', '),
+    }
+  })
+
+  return objects.flatMap((object) => (object === grouped ? splitObjects : object))
+}
+
+function needsInteractionBackground(
+  objects: EnhancedObject[],
+  userPrompt: string,
+) {
+  const foregroundCount = objects.filter((object) => !object.isBackground).length
+  return (
+    foregroundCount >= 2 &&
+    INTERACTION_INTENT.test(userPrompt) &&
+    !objects.some((object) => object.isBackground)
+  )
+}
+
+function interactionBackground(userPrompt: string): EnhancedObject {
+  return {
+    name: '背景',
+    prompt: [
+      `environmental background plate for: ${userPrompt}`,
+      'coherent play area with rich but unobtrusive contextual details',
+      'clear ground plane, soft ambient light, open central space reserved for foreground subjects',
+      'no main animals, no characters, no text',
+    ].join(', '),
+    negativePrompt:
+      'cats, dogs, horses, people, main subject, foreground character, text, watermark, cropped frame, abstract random shapes',
+    background: 'opaque',
+    isBackground: true,
+    position: 'center',
+    size: 'full',
+  }
+}
+
 function coordinateObjects(
   result: EnhanceResult,
   userPrompt: string,
 ): EnhanceResult {
-  const hasForeground = result.objects.some((object) => !object.isBackground)
+  const separatedObjects = splitGroupedForegroundObjects(
+    result.objects,
+    userPrompt,
+  )
+  const forceInteractionBackground = needsInteractionBackground(
+    separatedObjects,
+    userPrompt,
+  )
+  const withRequiredBackground = forceInteractionBackground
+    ? [interactionBackground(userPrompt), ...separatedObjects]
+    : separatedObjects
+  const hasForeground = withRequiredBackground.some(
+    (object) => !object.isBackground,
+  )
   const requestedObjects =
     hasForeground && !EXPLICIT_ENVIRONMENT_INTENT.test(userPrompt)
-      ? result.objects.filter((object) => !object.isBackground)
-      : result.objects
+      ? withRequiredBackground.filter(
+          (object) => !object.isBackground || forceInteractionBackground,
+        )
+      : withRequiredBackground
   const foregroundCount = requestedObjects.filter(
     (object) => !object.isBackground,
   ).length

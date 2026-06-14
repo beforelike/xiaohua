@@ -32,9 +32,9 @@ import {
 import { generateAsset } from './features/generation/apiClient'
 import {
   generationSizeForLayout,
-  planLayerRelativeToTarget,
   planGeneratedLayerLayout,
-  planSceneObjectLayout,
+  planLayerRelativeToTarget,
+  planSceneObjectLayouts,
 } from './features/scene/layout'
 import { MemoryPanel } from './features/scene/MemoryPanel'
 import { useVoiceInput } from './features/voice/useVoiceInput'
@@ -209,6 +209,7 @@ function App() {
   const discardPlaceholderLayer = useProjectStore(
     (state) => state.discardPlaceholderLayer,
   )
+  const markLayerFailed = useProjectStore((state) => state.markLayerFailed)
   const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
   const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
   const rememberIntent = useProjectStore((state) => state.rememberIntent)
@@ -356,13 +357,12 @@ function App() {
         const objectList = command.objects as SceneObject[]
         const totalObjects = objectList.length
         let completedObjects = 0
+        let failedObjects = 0
         // 先为每个对象放置"生成中"占位骨架，让画面在扩散生成完成前就立即响应
         const placedLayers = [...useProjectStore.getState().project.layers]
-        const placeholders = objectList.map((object) => {
-          const layout = planSceneObjectLayout(project, {
-            ...object,
-            avoidLayers: placedLayers,
-          })
+        const layouts = planSceneObjectLayouts(project, objectList, placedLayers)
+        const placeholders = objectList.map((object, index) => {
+          const layout = layouts[index]!
           const layer = addPlaceholderLayer({
             name: object.name,
             type: 'image',
@@ -456,11 +456,14 @@ function App() {
             completedObjects++
             setStatus(`已完成 ${completedObjects}/${totalObjects} 个对象…`)
           } catch (error) {
-            discardPlaceholderLayer(placeholder.id)
-            setStatus(
+            failedObjects++
+            const message =
               error instanceof Error
                 ? `生成“${obj.name}”失败：${error.message}`
-                : `生成“${obj.name}”时出错，已跳过该对象。`,
+                : `生成“${obj.name}”时出错，可稍后重试。`
+            markLayerFailed(placeholder.id, message)
+            setStatus(
+              `${message} 已保留占位框。`,
             )
           }
         }
@@ -477,9 +480,11 @@ function App() {
         setStatus(
           completedObjects > 0
             ? `已生成 ${completedObjects}/${totalObjects} 个对象`
-            : '没有可生成的对象，请换一种描述。',
+            : failedObjects > 0
+              ? `已放置 ${failedObjects}/${totalObjects} 个对象占位框，但素材生成失败。`
+              : '没有可生成的对象，请换一种描述。',
         )
-        return completedObjects > 0
+        return completedObjects > 0 || failedObjects > 0
       }
 
       // 单对象创建流程（回退）

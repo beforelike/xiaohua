@@ -77,6 +77,14 @@ describe('parseRuleCommand', () => {
     })
   })
 
+  it('treats counted subjects without a drawing verb as a create command', () => {
+    expect(parse('两只猫')).toMatchObject({
+      action: 'create',
+      prompt: '两只猫',
+      requiresGeneration: true,
+    })
+  })
+
   it('recognizes a common animal as one named object', () => {
     expect(parse('画一只小猫')).toMatchObject({
       action: 'create',

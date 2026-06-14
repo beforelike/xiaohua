@@ -10,6 +10,70 @@ import httpx
 from src.config import Settings
 from src.models.commands import DrawingCommand, ParseCommandRequest
 
+COUNT_WORDS = {
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+
+SUBJECTS = [
+    {
+        "name": "小猫",
+        "keywords": ("猫", "小猫", "猫咪"),
+        "english": "cat",
+        "identity": (
+            "domestic cat, furry body, feline face, triangular ears, whiskers, "
+            "visible tail, four legs with paws"
+        ),
+        "negative": (
+            "dog, mouse, horse, bird, human, humanoid, abstract shape, ring, torus, random object"
+        ),
+    },
+    {
+        "name": "老鼠",
+        "keywords": ("老鼠", "鼠", "小鼠"),
+        "english": "mouse",
+        "identity": "small mouse, rodent body, round ears, pointed nose, long thin tail, tiny paws",
+        "negative": "cat, dog, horse, bird, human, humanoid, abstract random object",
+    },
+    {
+        "name": "小狗",
+        "keywords": ("狗", "小狗", "狗狗"),
+        "english": "dog",
+        "identity": (
+            "friendly dog, canine face, floppy ears, wagging tail, four legs with paws, furry body"
+        ),
+        "negative": "cat, mouse, horse, bird, human, humanoid, abstract random object",
+    },
+    {
+        "name": "马",
+        "keywords": ("马",),
+        "english": "horse",
+        "identity": "horse, equine body, mane, tail, four long legs with hooves, full body visible",
+        "negative": "cat, dog, mouse, bird, human, humanoid, abstract random object",
+    },
+    {
+        "name": "小鸟",
+        "keywords": ("鸟", "小鸟", "鸟儿"),
+        "english": "bird",
+        "identity": "small bird, feathers, beak, wings, tail feathers, tiny feet",
+        "negative": "cat, dog, mouse, horse, human, humanoid, abstract random object",
+    },
+]
+
+INTERACTION_RE = re.compile(r"玩耍|追逐|抓|追|扑|打闹|互动|一起|陪伴|看着|望着|争抢")
+BACKGROUND_RE = re.compile(
+    r"背景|场景|草地|草坪|草原|森林|树林|河边|河流|小溪|湖边|海边|天空|花园|庭院|房间|室内|街道"
+)
+
 
 def _id() -> str:
     return str(uuid.uuid4())
@@ -64,6 +128,136 @@ def _command(action: str, **values: Any) -> DrawingCommand:
             "confidence": values.pop("confidence", 0.98),
             **values,
         }
+    )
+
+
+def _parse_count(value: str | None) -> int:
+    if not value:
+        return 1
+    return COUNT_WORDS.get(value, int(value) if value.isdigit() else 1)
+
+
+def _subject_for_text(text: str) -> dict[str, Any] | None:
+    return next(
+        (
+            subject
+            for subject in SUBJECTS
+            if any(keyword in text for keyword in subject["keywords"])
+        ),
+        None,
+    )
+
+
+def _subject_counts(text: str) -> list[tuple[dict[str, Any], int]]:
+    found: list[tuple[dict[str, Any], int]] = []
+    for subject in SUBJECTS:
+        keyword_pattern = "|".join(re.escape(keyword) for keyword in subject["keywords"])
+        counted = re.search(
+            rf"([一二两三四五六七八九十]|\d+)[只匹个头条羽]?(?:{keyword_pattern})",
+            text,
+        )
+        if counted:
+            found.append((subject, min(_parse_count(counted.group(1)), 6)))
+        elif any(keyword in text for keyword in subject["keywords"]):
+            found.append((subject, 1))
+    return found
+
+
+def _scene_objects_from_text(text: str) -> list[dict[str, Any]]:
+    subjects = _subject_counts(text)
+    foreground_total = sum(count for _, count in subjects)
+    if foreground_total < 2 and not (subjects and INTERACTION_RE.search(text)):
+        return []
+
+    positions = ["left", "right", "center", "bottom-left", "bottom-right", "top-left"]
+    objects: list[dict[str, Any]] = [
+        {
+            "name": "背景",
+            "prompt": ", ".join(
+                [
+                    f"environmental background plate for: {text}",
+                    "rich but unobtrusive contextual details",
+                    "clear ground plane, soft light",
+                    "open central space reserved for foreground subjects",
+                    "no main animals, no characters, no text",
+                ]
+            ),
+            "negativePrompt": (
+                "cats, dogs, mice, horses, birds, people, main subject, "
+                "foreground character, text, watermark, random abstract shapes"
+            ),
+            "background": "opaque",
+            "isBackground": True,
+            "position": "center",
+            "size": "full",
+        }
+    ]
+    position_index = 0
+    for subject, count in subjects:
+        for index in range(count):
+            suffix = str(index + 1) if count > 1 else ""
+            other_subjects = [
+                other["english"] for other, _ in subjects if other["english"] != subject["english"]
+            ]
+            relation = (
+                f"interacting with {', '.join(other_subjects)}"
+                if other_subjects
+                else f"interacting with the other {subject['english']}s"
+            )
+            objects.append(
+                {
+                    "name": f"{subject['name']}{suffix}",
+                    "prompt": ", ".join(
+                        [
+                            f"one distinct {subject['english']}",
+                            subject["identity"],
+                            relation,
+                            "dynamic pose matching the user request",
+                            "complete body visible, generous empty margin",
+                            "isolated foreground asset, solid white background, no background",
+                        ]
+                    ),
+                    "identityPrompt": f"{subject['english']}, {subject['identity']}",
+                    "actionPrompt": f"{relation}, dynamic pose matching: {text}",
+                    "negativePrompt": ", ".join(
+                        [
+                            "complex background, busy background, cropped body",
+                            "missing limbs, duplicate body",
+                            subject["negative"],
+                        ]
+                    ),
+                    "background": "transparent",
+                    "isBackground": False,
+                    "position": positions[position_index % len(positions)],
+                    "size": "medium",
+                }
+            )
+            position_index += 1
+    return objects
+
+
+def _create_scene_command_from_objects(
+    request: ParseCommandRequest,
+    text: str,
+    objects: list[dict[str, Any]],
+    target: dict[str, Any] | None = None,
+) -> DrawingCommand:
+    primary_subject = _subject_for_text(text)
+    return _command(
+        "create",
+        objectType="image",
+        prompt=request.text,
+        target=target,
+        properties={
+            "name": (primary_subject["name"] if primary_subject else "新元素")[:80],
+            "position": _position(text),
+        },
+        objects=objects,
+        style=request.context.global_style
+        or "warm storybook illustration, clean composition, soft daylight",
+        creativeDirection="根据用户提示拆分主体与背景，先放置可编辑占位图，再分别生成素材。",
+        sceneSummary=f"画面包含：{'、'.join(obj['name'] for obj in objects)}",
+        requiresGeneration=True,
     )
 
 
@@ -199,6 +393,14 @@ def parse_by_rules(request: ParseCommandRequest) -> DrawingCommand | None:
         name = re.sub(r"^(?:在左边|在右边|在右上角|在左上角)", "", name)
         name = re.sub(r"(?:在.*|到.*)$", "", name).strip() or "新元素"
         relation_target = _target(text, names)
+        objects = _scene_objects_from_text(text)
+        if objects:
+            return _create_scene_command_from_objects(
+                request,
+                text,
+                objects,
+                relation_target,
+            )
         return _command(
             "create",
             objectType="image",
@@ -207,6 +409,9 @@ def parse_by_rules(request: ParseCommandRequest) -> DrawingCommand | None:
             properties={"name": name[:80], "position": _position(text)},
             requiresGeneration=True,
         )
+    objects = _scene_objects_from_text(text)
+    if objects:
+        return _create_scene_command_from_objects(request, text, objects, target)
     return None
 
 

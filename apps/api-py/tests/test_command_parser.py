@@ -53,3 +53,28 @@ def test_text_command_preserves_content_and_style() -> None:
     assert command.properties and command.properties.text == "今天也要开心"
     assert command.properties.color == "#dc2626"
     assert command.properties.font_weight == "bold"
+
+
+def test_create_splits_counted_interaction_into_scene_objects() -> None:
+    command = parse_command(request("画两只猫抓老鼠"), Settings())
+
+    assert command is not None
+    assert command.requires_generation is True
+    assert command.objects is not None
+    assert [obj.name for obj in command.objects] == ["背景", "小猫1", "小猫2", "老鼠"]
+    assert command.objects[0].background == "opaque"
+    assert command.objects[1].background == "transparent"
+    assert command.objects[2].position.value == "right"
+    assert "mouse" in command.objects[1].prompt
+    assert "cat" in command.objects[3].negative_prompt
+
+
+def test_create_understands_scene_description_without_create_verb() -> None:
+    command = parse_command(request("两只猫在玩耍"), Settings())
+
+    assert command is not None
+    assert command.action.value == "create"
+    assert command.objects is not None
+    assert [obj.name for obj in command.objects] == ["背景", "小猫1", "小猫2"]
+    assert command.objects[0].is_background is True
+    assert command.objects[1].position.value == "left"
