@@ -183,6 +183,25 @@ describe('App', () => {
     expect(useProjectStore.getState().project.layers).toHaveLength(0)
   })
 
+  it('controls layer visibility and locking locally from the layer panel', () => {
+    render(<App />)
+    fireEvent.click(
+      within(screen.getByLabelText('素材工具箱')).getByRole('button', {
+        name: '太阳',
+      }),
+    )
+
+    fireEvent.click(screen.getByTitle('隐藏图层'))
+    expect(useProjectStore.getState().project.layers[0]?.visible).toBe(false)
+    fireEvent.click(screen.getByTitle('显示图层'))
+    expect(useProjectStore.getState().project.layers[0]?.visible).toBe(true)
+
+    fireEvent.click(screen.getByTitle('锁定图层'))
+    expect(useProjectStore.getState().project.layers[0]?.locked).toBe(true)
+    fireEvent.click(screen.getByTitle('解锁图层'))
+    expect(useProjectStore.getState().project.layers[0]?.locked).toBe(false)
+  })
+
   it('parses and executes a text command through the local API', async () => {
     const fetchMock = stubApi({
       '/api/commands/parse': () =>

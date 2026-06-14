@@ -200,7 +200,12 @@ export const drawingCommandSchema = z.object({
       stroke: z.string().max(80).optional(),
       strokeWidth: z.number().min(0).max(32).optional(),
       rotation: z.number().optional(),
+      rotationDelta: z.number().optional(),
       scaleDelta: z.number().optional(),
+      opacity: z.number().min(0).max(1).optional(),
+      opacityDelta: z.number().min(-1).max(1).optional(),
+      visible: z.boolean().optional(),
+      locked: z.boolean().optional(),
       name: z.string().trim().min(1).max(80).optional(),
       zOrder: z.enum(['front', 'back', 'up', 'down']).optional(),
     })

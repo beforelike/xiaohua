@@ -326,3 +326,80 @@ test('keeps text and attached accessories through move and export', async ({
     y: 48,
   })
 })
+
+test('persists smart text layout and deterministic layer controls', async ({
+  page,
+}) => {
+  await page.goto('/')
+
+  const toolbox = page.getByLabel('素材工具箱')
+  await toolbox.getByRole('button', { name: '树' }).click()
+  const commandInput = page.getByPlaceholder('例如：把太阳变小一点并移到右上角')
+
+  await commandInput.fill(
+    '在顶部写上“今天也要保持好奇和创造力”，用活泼的涂鸦字',
+  )
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(
+    page.getByText('已添加文字“今天也要保持好奇和创造力”'),
+  ).toBeVisible()
+  await expect(page.getByLabel('作品记忆')).toContainText(
+    '文字“今天也要保持好奇和创造力”',
+  )
+
+  await commandInput.fill('把树设为半透明并隐藏')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(page.getByText('已更新树')).toBeVisible()
+  const treeRow = page
+    .getByLabel('图层面板')
+    .locator('[data-layer-id]')
+    .filter({ hasText: '树' })
+  await expect(treeRow.getByRole('button', { name: '○' })).toBeVisible()
+
+  await commandInput.fill('显示树')
+  await page.getByRole('button', { name: '执行' }).click()
+  await commandInput.fill('锁定树')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(treeRow.getByRole('button', { name: '锁' })).toBeVisible()
+  await commandInput.fill('解锁树并顺时针再转一点')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect(treeRow.getByRole('button', { name: '开' })).toBeVisible()
+
+  const downloads: Download[] = []
+  page.on('download', (download) => downloads.push(download))
+  await commandInput.fill('保存作品')
+  await page.getByRole('button', { name: '执行' }).click()
+  await expect.poll(() => downloads.length).toBe(2)
+  const projectDownload = downloads.find((download) =>
+    download.suggestedFilename().endsWith('.xiaohua.json'),
+  )
+  const projectPath = await projectDownload?.path()
+  expect(projectPath).toBeTruthy()
+  const project = JSON.parse(await readFile(projectPath!, 'utf8')) as {
+    layers: Array<{
+      name: string
+      type: string
+      width: number
+      rotation: number
+      opacity: number
+      visible: boolean
+      locked: boolean
+      fontFamily?: string
+    }>
+  }
+  const tree = project.layers.find((layer) => layer.name === '树')
+  const title = project.layers.find(
+    (layer) => layer.name === '今天也要保持好奇和创造力',
+  )
+  expect(tree).toMatchObject({
+    opacity: 0.5,
+    visible: true,
+    locked: false,
+    rotation: 15,
+  })
+  expect(title).toMatchObject({
+    type: 'text',
+    width: 820,
+  })
+  expect(title?.fontFamily).toContain('KaiTi')
+})

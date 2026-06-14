@@ -228,6 +228,33 @@ export function parseRuleCommand(
   }
 
   const position = positionFromText(text)
+  const visible = /(?:显示|取消隐藏|重新显示)/.test(text)
+    ? true
+    : /(?:隐藏|不可见)/.test(text)
+      ? false
+      : undefined
+  const locked = /(?:解锁|解除锁定)/.test(text)
+    ? false
+    : /(?:锁定|锁住)/.test(text)
+      ? true
+      : undefined
+  const opacityPercent = text.match(
+    /(?:透明度|不透明度)(?:调到|设为|改成|为)?(\d{1,3})%?/,
+  )
+  const opacity = /(?:完全不透明|不透明)$/.test(text)
+    ? 1
+    : /(?:完全透明)$/.test(text)
+      ? 0
+      : /(?:半透明)/.test(text)
+        ? 0.5
+        : opacityPercent?.[1]
+          ? Math.min(1, Number.parseInt(opacityPercent[1], 10) / 100)
+          : undefined
+  const opacityDelta = /(?:更透明|透明一点)/.test(text)
+    ? -0.15
+    : /(?:更不透明|不透明一点)/.test(text)
+      ? 0.15
+      : undefined
   const targetLayer = request.context.recentLayers.find(
     (layer) =>
       layer.id === target?.id ||
@@ -244,7 +271,22 @@ export function parseRuleCommand(
       request.text.match(/(?:改成|换成|写成)[“"'‘’]([^”"'‘’]+)[”"'‘’]/)?.[1]
     const color = colorFromText(text)
     const fontWeight = /(?:粗体|加粗|醒目|有力)/.test(text) ? 'bold' : undefined
-    if (replacementText || color || fontWeight || position) {
+    const fontFamily = /(?:涂鸦|手写|手绘)字/.test(text)
+      ? '"STKaiti", "KaiTi", "Microsoft YaHei", sans-serif'
+      : /(?:黑体|无衬线)/.test(text)
+        ? '"Microsoft YaHei", "SimHei", sans-serif'
+        : undefined
+    if (
+      replacementText ||
+      color ||
+      fontWeight ||
+      fontFamily ||
+      position ||
+      opacity !== undefined ||
+      opacityDelta !== undefined ||
+      visible !== undefined ||
+      locked !== undefined
+    ) {
       return drawingCommandSchema.parse({
         ...base,
         action: 'modify',
@@ -253,7 +295,12 @@ export function parseRuleCommand(
           ...(replacementText ? { text: replacementText.trim() } : {}),
           ...(color ? { color } : {}),
           ...(fontWeight ? { fontWeight } : {}),
+          ...(fontFamily ? { fontFamily } : {}),
           ...(position ? { position } : {}),
+          ...(opacity !== undefined ? { opacity } : {}),
+          ...(opacityDelta !== undefined ? { opacityDelta } : {}),
+          ...(visible !== undefined ? { visible } : {}),
+          ...(locked !== undefined ? { locked } : {}),
         },
       })
     }
@@ -285,6 +332,11 @@ export function parseRuleCommand(
         name: textMatch[1].trim().slice(0, 20),
         ...(position ? { position } : {}),
         ...(colorFromText(text) ? { color: colorFromText(text) } : {}),
+        ...(/(?:涂鸦|手写|手绘)字/.test(text)
+          ? {
+              fontFamily: '"STKaiti", "KaiTi", "Microsoft YaHei", sans-serif',
+            }
+          : {}),
         fontWeight: /(?:醒目|粗体|标题|有力)/.test(text) ? 'bold' : 'normal',
       },
       requiresGeneration: false,
@@ -326,7 +378,23 @@ export function parseRuleCommand(
   const rotation = rotationText?.[1]
     ? Number.parseFloat(rotationText[1])
     : undefined
-  if (position || size || rotation !== undefined) {
+  const rotationDelta = /(?:顺时针|向右)(?:再)?转(?:一点)?/.test(text)
+    ? 15
+    : /(?:逆时针|向左)(?:再)?转(?:一点)?/.test(text)
+      ? -15
+      : /(?:再)?转一点/.test(text)
+        ? 15
+        : undefined
+  if (
+    position ||
+    size ||
+    rotation !== undefined ||
+    rotationDelta !== undefined ||
+    opacity !== undefined ||
+    opacityDelta !== undefined ||
+    visible !== undefined ||
+    locked !== undefined
+  ) {
     return drawingCommandSchema.parse({
       ...base,
       action: 'modify',
@@ -335,6 +403,11 @@ export function parseRuleCommand(
         ...(position ? { position } : {}),
         ...(size ? { size } : {}),
         ...(rotation !== undefined ? { rotation } : {}),
+        ...(rotationDelta !== undefined ? { rotationDelta } : {}),
+        ...(opacity !== undefined ? { opacity } : {}),
+        ...(opacityDelta !== undefined ? { opacityDelta } : {}),
+        ...(visible !== undefined ? { visible } : {}),
+        ...(locked !== undefined ? { locked } : {}),
       },
     })
   }

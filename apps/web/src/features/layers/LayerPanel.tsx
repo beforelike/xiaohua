@@ -62,6 +62,28 @@ export function LayerPanel({ project, execute }: LayerPanelProps) {
             <div className="layer-actions">
               <button
                 type="button"
+                title={layer.visible ? '隐藏图层' : '显示图层'}
+                onClick={() =>
+                  execute(
+                    command('modify', layer.id, { visible: !layer.visible }),
+                  )
+                }
+              >
+                {layer.visible ? '◉' : '○'}
+              </button>
+              <button
+                type="button"
+                title={layer.locked ? '解锁图层' : '锁定图层'}
+                onClick={() =>
+                  execute(
+                    command('modify', layer.id, { locked: !layer.locked }),
+                  )
+                }
+              >
+                {layer.locked ? '锁' : '开'}
+              </button>
+              <button
+                type="button"
                 title="复制图层"
                 onClick={() => execute(command('duplicate', layer.id))}
               >

@@ -201,7 +201,9 @@ export function executeCommand(
   if (!resolution.ok) return resolution
   const target = resolution.layer
 
-  if (target.locked && command.action !== 'select') {
+  const explicitlyUnlocking =
+    command.action === 'modify' && command.properties?.locked === false
+  if (target.locked && command.action !== 'select' && !explicitlyUnlocking) {
     return { ok: false, code: 'LOCKED_LAYER', message: '目标图层已锁定' }
   }
 
@@ -264,7 +266,7 @@ export function executeCommand(
         ...project,
         layers: remaining,
         selectedLayerId:
-          project.selectedLayerId === target.id
+          project.selectedLayerId && removedIds.has(project.selectedLayerId)
             ? fallback
             : project.selectedLayerId,
         recentLayerIds: project.recentLayerIds.filter(
@@ -377,6 +379,9 @@ export function executeCommand(
     if (properties?.rotation !== undefined) {
       nextLayer.rotation = properties.rotation
     }
+    if (properties?.rotationDelta !== undefined) {
+      nextLayer.rotation += properties.rotationDelta
+    }
     if (properties?.text !== undefined && nextLayer.type === 'text') {
       nextLayer.textContent = properties.text
       nextLayer.semanticDescription = `文字“${properties.text}”`
@@ -395,6 +400,21 @@ export function executeCommand(
     if (properties?.stroke !== undefined) nextLayer.stroke = properties.stroke
     if (properties?.strokeWidth !== undefined) {
       nextLayer.strokeWidth = properties.strokeWidth
+    }
+    if (properties?.opacity !== undefined) {
+      nextLayer.opacity = properties.opacity
+    }
+    if (properties?.opacityDelta !== undefined) {
+      nextLayer.opacity = Math.min(
+        1,
+        Math.max(0, nextLayer.opacity + properties.opacityDelta),
+      )
+    }
+    if (properties?.visible !== undefined) {
+      nextLayer.visible = properties.visible
+    }
+    if (properties?.locked !== undefined) {
+      nextLayer.locked = properties.locked
     }
     if (properties?.name) nextLayer.name = properties.name
   }

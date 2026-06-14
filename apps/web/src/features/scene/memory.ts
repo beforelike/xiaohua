@@ -131,13 +131,15 @@ export function refreshProjectSceneMemory(project: Project): Project {
     isSceneLayer(layer, project),
   )
   const foregroundLayers = visibleLayers.filter(
-    (layer) => !isSceneLayer(layer, project) && !layer.parentLayerId,
+    (layer) =>
+      layer.type !== 'text' &&
+      !isSceneLayer(layer, project) &&
+      !layer.parentLayerId,
   )
   const textLayers = visibleLayers.filter((layer) => layer.type === 'text')
   const relationParts = relationSummary(project)
   const focus =
     foregroundLayers
-      .filter((layer) => layer.type !== 'text')
       .sort(
         (left, right) => right.width * right.height - left.width * left.height,
       )

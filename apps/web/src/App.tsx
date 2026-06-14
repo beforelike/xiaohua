@@ -81,6 +81,16 @@ function buildSceneContext(project: Project) {
   })
 }
 
+function textLayerSize(content: string, fontSize: number) {
+  const characters = [...content]
+  const preferredLineLength = Math.min(16, Math.max(6, characters.length))
+  const lines = Math.max(1, Math.ceil(characters.length / preferredLineLength))
+  return {
+    width: Math.min(820, Math.max(220, preferredLineLength * fontSize * 1.08)),
+    height: Math.max(96, lines * fontSize * 1.35),
+  }
+}
+
 function assetIdFromUrl(assetUrl?: string) {
   return assetUrl?.match(/\/api\/assets\/([a-f0-9]{24})/)?.[1]
 }
@@ -231,18 +241,20 @@ function App() {
           setStatus('请告诉我需要添加的文字内容。')
           return false
         }
+        const fontSize = command.properties?.fontSize ?? 64
+        const textSize = textLayerSize(content, fontSize)
         const layer = addReadyLayer({
           name: command.properties?.name ?? content.slice(0, 20),
           type: 'text',
           source: 'user',
           textContent: content,
           semanticDescription: `画面文字“${content}”`,
-          width: command.properties?.width ?? 460,
-          height: command.properties?.height ?? 130,
+          width: command.properties?.width ?? textSize.width,
+          height: command.properties?.height ?? textSize.height,
           fontFamily:
             command.properties?.fontFamily ??
             '"Microsoft YaHei", "PingFang SC", sans-serif',
-          fontSize: command.properties?.fontSize ?? 64,
+          fontSize,
           fontWeight: command.properties?.fontWeight ?? 'bold',
           fill: command.properties?.color ?? '#2b2923',
           align: command.properties?.align ?? 'center',

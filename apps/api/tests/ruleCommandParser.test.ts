@@ -145,6 +145,35 @@ describe('parseRuleCommand', () => {
     })
   })
 
+  it('parses deterministic layer controls without image generation', () => {
+    expect(parse('把太阳设为半透明并隐藏')).toMatchObject({
+      action: 'modify',
+      target: { name: '太阳' },
+      properties: { opacity: 0.5, visible: false },
+      requiresGeneration: false,
+    })
+    expect(parse('锁定太阳')).toMatchObject({
+      properties: { locked: true },
+    })
+    expect(parse('把太阳顺时针再转一点')).toMatchObject({
+      properties: { rotationDelta: 15 },
+    })
+  })
+
+  it('keeps handwritten text as a native editable text layer', () => {
+    const command = parse('在顶部写上“保持好奇”，用活泼的涂鸦字')
+    expect(command).toMatchObject({
+      action: 'create',
+      objectType: 'text',
+      properties: {
+        text: '保持好奇',
+        position: 'top',
+      },
+      requiresGeneration: false,
+    })
+    expect(command?.properties?.fontFamily).toContain('KaiTi')
+  })
+
   it('edits existing text content and color without image generation', () => {
     const textContext: ParseCommandRequest['context'] = {
       ...context,

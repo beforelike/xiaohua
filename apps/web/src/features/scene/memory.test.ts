@@ -65,6 +65,9 @@ describe('scene memory', () => {
 
     expect(project.memory.sceneSummary).toContain('树位于中部左侧')
     expect(project.memory.sceneSummary).toContain('文字“今天也要开心”位于上方')
+    expect(
+      project.memory.sceneSummary.match(/文字“今天也要开心”/g),
+    ).toHaveLength(1)
     expect(project.memory.sceneSummary).toContain('蓝色魔法帽子附着在树上')
     expect(project.memory.sceneSummary).toContain('当前视觉焦点是树')
     expect(project.memory.palette).toEqual(

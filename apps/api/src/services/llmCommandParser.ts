@@ -72,11 +72,14 @@ const SYSTEM_PROMPT = `你是一个具有作品记忆和视觉导演能力的现
    - “把树和太阳组合”使用 action="group"，target.ids 填写相关图层 id；“取消组合”使用 action="ungroup"
    - “撤销/上一步”使用 action="undo"；“重做/恢复”使用 action="redo"，均不需要 target
    - 修改对象内容时，prompt 必须写成“修改后的完整对象描述”，结合该图层旧 prompt 和用户的新要求，不能只复述“把它改成……”。
+   - 透明度、显示隐藏、锁定解锁、相对旋转均为本地 modify：使用 properties.opacity/opacityDelta/visible/locked/rotationDelta，requiresGeneration=false。
+   - 一条指令包含多个本地属性时必须全部保留，例如“变小并移到右上角、半透明”同时输出 size、position、opacity。
 
 4. 文字能力：
    - “写上/添加文字/标题是……”默认创建 objectType="text"，requiresGeneration=false。
    - properties.text 保存准确文字，禁止翻译、改写或漏字。
-   - properties 可设置 color、fontSize、fontWeight、position、rotation、align。
+   - properties 可设置 color、fontSize、fontWeight、fontFamily、position、rotation、align、opacity。
+   - “涂鸦字、手写字、手绘字”使用可用的中文手写字体栈，不要生成文字图片。
    - 只有用户明确要求“文字贴纸、艺术字图片、带插画的字效”时才使用 objectType="image" 并生成透明素材。
 
 5. 作品理解与记忆：

@@ -346,6 +346,92 @@ describe('executeCommand', () => {
     expect(project).toEqual(snapshot)
   })
 
+  it('supports local opacity, visibility, locking, unlocking, and relative rotation', () => {
+    const project = projectWithLayers()
+    const changed = executeCommand(
+      project,
+      command({
+        action: 'modify',
+        target: { id: 'sun' },
+        properties: {
+          opacity: 0.5,
+          visible: false,
+          locked: true,
+          rotationDelta: 15,
+        },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+
+    expect(changed.ok).toBe(true)
+    if (!changed.ok) return
+    expect(
+      changed.project.layers.find((layer) => layer.id === 'sun'),
+    ).toMatchObject({
+      opacity: 0.5,
+      visible: false,
+      locked: true,
+      rotation: 15,
+    })
+
+    const unlocked = executeCommand(
+      changed.project,
+      command({
+        action: 'modify',
+        target: { id: 'sun' },
+        properties: { locked: false },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+    expect(unlocked.ok).toBe(true)
+    if (unlocked.ok) {
+      expect(
+        unlocked.project.layers.find((layer) => layer.id === 'sun')?.locked,
+      ).toBe(false)
+    }
+  })
+
+  it('selects a valid fallback when deleting a parent of the selected child', () => {
+    let project = projectWithLayers()
+    project = addLayer(
+      project,
+      createLayer(
+        project,
+        {
+          id: 'hat',
+          name: '帽子',
+          type: 'preset',
+          source: 'preset',
+          parentLayerId: 'tree',
+          width: 80,
+          height: 60,
+          createdBy: 'voice',
+        },
+        { now: () => now },
+      ),
+      now,
+    )
+    project = { ...project, selectedLayerId: 'hat' }
+
+    const result = executeCommand(
+      project,
+      command({
+        action: 'delete',
+        target: { id: 'tree' },
+        requiresGeneration: false,
+      }),
+      later,
+    )
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.project.layers.map((layer) => layer.id)).toEqual(['sun'])
+      expect(result.project.selectedLayerId).toBe('sun')
+    }
+  })
+
   it('normalizes z-indexes when moving a layer to the front', () => {
     const result = executeCommand(
       projectWithLayers(),

@@ -103,6 +103,8 @@
 - 响应必须通过服务端 Schema 校验后返回。
 - 对象操作支持 `duplicate`、`group`、`ungroup`、`undo` 和 `redo`；这些动作不得调用图片生成接口。
 - `group` 使用 `target.ids` 指定至少两个图层；组合关系以 `groupId` 保存在项目 JSON 中。
+- 本地图层修改支持 `properties.opacity`、`opacityDelta`、`visible`、`locked` 和 `rotationDelta`，不得调用图片生成接口。
+- 一条 `modify` 指令可以同时包含位置、尺寸、旋转、透明度和可见性属性，解析器不得遗漏复合条件。
 - 创建命令配置 LLM 增强时，由 LLM 根据用户题材自动选择 `style` 并进行对象拆分。
 - 用户明确指定画风时优先遵从；未指定时自然动物与真实场景默认选择写实风格。
 - 新项目的 `globalStyle` 为空；首次生成成功后保存 LLM 选择的风格，后续对象默认保持一致。
