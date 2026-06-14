@@ -4,6 +4,7 @@
 """
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -185,5 +186,49 @@ class ParseCommandRequest(BaseModel):
     schema_version: int = Field(default=1, alias="schemaVersion")
     text: str = Field(min_length=1, max_length=500)
     context: ParseCommandContext
+
+    model_config = {"populate_by_name": True}
+
+
+class ClarificationReason(str, Enum):
+    """触发澄清回环的原因"""
+
+    LOW_CONFIDENCE = "low_confidence"  # 解析置信度过低，需用户确认
+    AMBIGUOUS_TARGET = "ambiguous_target"  # 命中多个候选目标，需用户指定
+    MISSING_TARGET = "missing_target"  # 缺少操作目标，需用户指定
+
+
+class ClarificationOption(BaseModel):
+    """澄清回环的候选项
+
+    供前端在 confirming 阶段呈现给用户进行语音/点选确认。
+    """
+
+    id: str = Field(min_length=1, description="候选项标识，用户确认时回传")
+    label: str = Field(min_length=1, max_length=120, description="中文展示文案")
+    target_id: str | None = Field(
+        default=None, alias="targetId", description="该候选项对应的图层 ID（目标歧义时使用）"
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class ClarificationResult(BaseModel):
+    """澄清回环结果
+
+    当解析置信度不足或目标存在歧义时返回，前端据此进入 confirming 阶段，
+    用中文向用户提问并收集确认，避免直接对画布执行错误操作。
+    """
+
+    kind: Literal["clarification"] = "clarification"
+    reason: ClarificationReason
+    question: str = Field(min_length=1, max_length=300, description="向用户提出的中文澄清问题")
+    original_text: str = Field(alias="originalText", description="触发澄清的原始用户输入")
+    options: list[ClarificationOption] = Field(
+        default_factory=list, max_length=10, description="候选项列表"
+    )
+    candidate: DrawingCommand | None = Field(
+        default=None, description="低置信度时的最佳猜测命令，供用户确认后直接执行"
+    )
 
     model_config = {"populate_by_name": True}
