@@ -285,7 +285,6 @@ describe('imageGeneration', () => {
     )
 
     expect(asset.source).toBe('generated')
-    expect(fetcher).toHaveBeenCalledOnce()
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       'http://127.0.0.1:8045/v1/chat/completions',
     )
@@ -301,6 +300,29 @@ describe('imageGeneration', () => {
     expect(body.messages[0]?.content).toContain(
       'edge-to-edge environmental background plate',
     )
+    expect(asset.generation).toMatchObject({
+      provider: 'gemini-image',
+      mode: 'standard',
+      prompt: body.messages[0]?.content,
+      negativePrompt: '',
+      style: config.SD_STYLE_PROMPT,
+      seed: Number.parseInt(asset.id.slice(0, 8), 16),
+      width: 256,
+      height: 256,
+      steps: config.SD_STEPS,
+      cfgScale: config.SD_CFG_SCALE,
+      sampler: config.SD_SAMPLER,
+      pipelineVersion: 14,
+    })
+
+    const cached = await generateAsset(
+      { ...request, background: 'opaque' },
+      config,
+      fetcher,
+    )
+
+    expect(cached.generation).toEqual(asset.generation)
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('asks Gemini for one cohesive image in scene mode', async () => {

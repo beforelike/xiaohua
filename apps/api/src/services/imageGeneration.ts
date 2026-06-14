@@ -9,6 +9,7 @@ import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
 import { requestedSubjectCount } from './promptComposer'
 import {
+  buildGeminiImageTask,
   buildStableDiffusionTask,
   PROMPT_PIPELINE_VERSION,
 } from './generationTask'
@@ -460,63 +461,19 @@ async function decodeGeminiImage(
 async function generateWithGemini(
   request: GenerateAssetRequest,
   config: AppConfig,
+  id: string,
   fetcher: typeof fetch,
   cacheDirectory: string,
   includeVisualReferences = true,
 ) {
   if (!config.GEMINI_IMAGE_API_KEY) throw new Error('GEMINI_NOT_CONFIGURED')
   const apiKey = config.GEMINI_IMAGE_API_KEY
-  const expectedSubjects = expectedSubjectCount(request)
-  const subjectDescription =
-    expectedSubjects === 1
-      ? 'the requested foreground subject'
-      : `the requested group of exactly ${String(expectedSubjects)} foreground subjects`
-  const generationMode = request.generationMode ?? 'standard'
-  const foregroundInstructions =
-    generationMode === 'scene'
-      ? 'Render the complete requested scene edge to edge as one cohesive image. Include every requested subject and make their spatial relationship and interaction unmistakable. Use one camera, one perspective, unified lighting, consistent scale, natural contact shadows, and a single polished visual style. Compose the subjects and environment together instead of making isolated assets or an empty background plate.'
-      : request.background === 'transparent'
-        ? `Render only ${subjectDescription} as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.`
-        : generationMode === 'character-sheet' ||
-            generationMode === 'character-action'
-          ? 'Render the requested character reference or action image on a plain, unobtrusive studio background. Do not reinterpret it as an environmental background plate.'
-          : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
-  const prompt = [
-    'You are the visual director for an editable layered artwork.',
-    `Artwork direction: ${request.style ?? config.SD_STYLE_PROMPT}`,
-    request.sceneContext
-      ? `Current artwork memory and composition: ${request.sceneContext}`
-      : undefined,
-    `Requested layer: ${request.prompt}`,
-    foregroundInstructions,
-    request.referenceAssetId && includeVisualReferences
-      ? 'The first reference image is the existing version of this same layer. Preserve every identity and design feature not explicitly changed by the request.'
-      : undefined,
-    request.referenceAssetId && request.preservePose
-      ? 'This is a minimal edit, not a redesign. Preserve the exact subject composition, count, pose, silhouette, scale, faces, markings, and camera angle; change only the explicitly requested detail.'
-      : undefined,
-    request.referenceAssetId && request.preservePose === false
-      ? 'Use the reference image only for immutable identity, anatomy, face, body proportions, markings, materials, and colors. The old pose and old head direction are forbidden. Repose the same subject so the newly requested action is literal, unmistakable, and visibly different; every limb, head angle, gaze, and body orientation must support the new action.'
-      : undefined,
-    request.identityConstraints
-      ? `Immutable identity constraints: ${request.identityConstraints}. These are hard requirements, not suggestions.`
-      : undefined,
-    request.referenceAssetId
-      ? 'Do not redesign, age, recolor, change species, change body type, add, remove, or replace referenced subjects. Keep the same recognizable individual or group.'
-      : undefined,
-    request.sceneImageDataUrl && generationMode !== 'scene'
-      ? 'The final reference image is the current full canvas. Match its camera, perspective, palette, lighting, rendering language, and available spatial role. Do not copy other objects into this isolated layer.'
-      : undefined,
-    request.negativePrompt
-      ? `Strictly avoid: ${request.negativePrompt}.`
-      : undefined,
-    request.background === 'transparent'
-      ? `Show exactly ${String(expectedSubjects)} requested ${expectedSubjects === 1 ? 'subject' : 'subjects'} and no extra depictions. No alternate pose, second view, turnaround, character sheet, contact sheet, grid, collage, inset, comparison, or duplicated body.`
-      : undefined,
-    'Return one polished production-ready image, not a draft, concept sheet, comparison, collage, frame, badge, or annotated design.',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  const generationTask = buildGeminiImageTask({
+    request,
+    config,
+    id,
+    includeVisualReferences,
+  })
 
   const imageReferences: string[] = []
   if (includeVisualReferences && request.referenceAssetId) {
@@ -535,7 +492,7 @@ async function generateWithGemini(
     imageReferences.push(request.sceneImageDataUrl)
   }
   const multimodalContent = [
-    { type: 'text', text: prompt },
+    { type: 'text', text: generationTask.prompt },
     ...imageReferences.map((url) => ({
       type: 'image_url',
       image_url: { url },
@@ -558,7 +515,7 @@ async function generateWithGemini(
             content:
               includeReferences && imageReferences.length > 0
                 ? multimodalContent
-                : prompt,
+                : generationTask.prompt,
           },
         ],
       }),
@@ -569,12 +526,15 @@ async function generateWithGemini(
     response = await requestImage(false)
   }
   if (!response.ok) throw new Error(`GEMINI_HTTP_${String(response.status)}`)
-  return decodeGeminiImage(
-    (await response.json()) as GeminiImageResponse,
-    fetcher,
-    apiKey,
-    config.GEMINI_IMAGE_BASE_URL,
-  )
+  return {
+    image: await decodeGeminiImage(
+      (await response.json()) as GeminiImageResponse,
+      fetcher,
+      apiKey,
+      config.GEMINI_IMAGE_BASE_URL,
+    ),
+    generation: generationTask.metadata,
+  }
 }
 
 function jsonObjectFromText(value: unknown) {
@@ -816,7 +776,13 @@ export async function generateAsset(
             id,
             ...stableDiffusionPromptInput(request),
           }).metadata
-        : undefined
+        : config.IMAGE_PROVIDER === 'gemini-image'
+          ? buildGeminiImageTask({
+              request,
+              config,
+              id,
+            }).metadata
+          : undefined
     return {
       id,
       url: `/api/assets/${id}`,
@@ -849,14 +815,15 @@ export async function generateAsset(
   if (config.IMAGE_PROVIDER === 'gemini-image') {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const generated = await generateWithGemini(
+        const geminiResult = await generateWithGemini(
           request,
           config,
+          id,
           fetcher,
           cacheDirectory,
           attempt === 0,
         )
-        const normalized = await sharp(generated)
+        const normalized = await sharp(geminiResult.image)
           .resize(request.width, request.height, {
             fit: request.background === 'transparent' ? 'contain' : 'cover',
             background:
@@ -907,6 +874,7 @@ export async function generateAsset(
           mimeType: 'image/png',
           backgroundRemoved: request.background === 'transparent',
           source: 'generated',
+          generation: geminiResult.generation,
         }
       } catch (error) {
         geminiError =
