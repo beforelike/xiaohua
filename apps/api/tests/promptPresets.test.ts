@@ -3,9 +3,32 @@ import { findPreset, promptPresets } from '../src/services/promptPresets'
 import {
   buildNegativePrompt,
   buildPrompt,
+  expectedSubjectCount,
 } from '../src/services/imageGeneration'
+import { requestedSubjectCount } from '../src/services/promptComposer'
 
 describe('promptPresets', () => {
+  it('detects requested subject counts in English and Chinese prompts', () => {
+    expect(requestedSubjectCount('exactly two horses drinking')).toBe(2)
+    expect(requestedSubjectCount('两匹马低头喝水')).toBe(2)
+    expect(requestedSubjectCount('three birds flying')).toBe(3)
+    expect(requestedSubjectCount('a horse running')).toBe(1)
+  })
+
+  it('inherits subject count from edit identity constraints', () => {
+    expect(
+      expectedSubjectCount({
+        schemaVersion: 1,
+        commandId: 'edit-horses',
+        prompt: 'lower their heads to drink',
+        identityConstraints: 'preserve exactly two horses',
+        width: 512,
+        height: 512,
+        background: 'transparent',
+      }),
+    ).toBe(2)
+  })
+
   describe('findPreset', () => {
     it('精确匹配关键词', () => {
       const result = findPreset('太阳')
@@ -100,6 +123,36 @@ describe('promptPresets', () => {
       expect(result).toContain('isolated subject group')
       expect(result).not.toContain('single subject')
     })
+
+    it('场景模式注入统一构图约束而不是前景隔离约束', () => {
+      const result = buildPrompt(
+        'a cat chases a mouse through a kitchen',
+        'opaque',
+        'storybook illustration',
+        true,
+        'scene',
+      )
+
+      expect(result).toContain('one complete cohesive scene')
+      expect(result).toContain('single camera perspective')
+      expect(result).toContain('subjects interact naturally')
+      expect(result).not.toContain('isolated object')
+    })
+
+    it('角色动作模式强调身份保持和明确动作', () => {
+      const result = buildPrompt(
+        'the same horse lowering its head to drink',
+        'transparent',
+        'realistic wildlife photography',
+        true,
+        'character-action',
+      )
+
+      expect(result).toContain('preserve the same character identity')
+      expect(result).toContain('clear requested action')
+      expect(result).toContain('dynamic pose controlled by the prompt')
+      expect(result).toContain('isolated object')
+    })
   })
 
   describe('buildNegativePrompt with presets', () => {
@@ -140,6 +193,34 @@ describe('promptPresets', () => {
       const result = buildNegativePrompt('草地', undefined, 'opaque')
       expect(result).not.toContain('extra limbs')
       expect(result).not.toContain('complex background')
+    })
+
+    it('场景模式排除孤立素材和拼贴结果', () => {
+      const result = buildNegativePrompt(
+        'a cat chases a mouse through a kitchen',
+        undefined,
+        'opaque',
+        'scene',
+      )
+
+      expect(result).toContain('isolated asset')
+      expect(result).toContain('empty background plate')
+      expect(result).toContain('collage')
+      expect(result).not.toContain('multiple subjects')
+    })
+
+    it('角色动作模式排除身份漂移和设定图残留', () => {
+      const result = buildNegativePrompt(
+        'the same horse lowering its head to drink',
+        'old pose',
+        'transparent',
+        'character-action',
+      )
+
+      expect(result).toContain('identity drift')
+      expect(result).toContain('static reference sheet')
+      expect(result).toContain('old pose')
+      expect(result).toContain('complex background')
     })
   })
 })

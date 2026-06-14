@@ -80,9 +80,24 @@ describe('parseRuleCommand', () => {
   it('recognizes a common animal as one named object', () => {
     expect(parse('画一只小猫')).toMatchObject({
       action: 'create',
+      objectType: 'preset',
       properties: { name: '小猫' },
+      requiresGeneration: false,
     })
   })
+
+  it.each(['画两只小猫', '画一只草地上的小猫', '画一只奔跑的小猫'])(
+    'keeps complex named object requests on the generation path: %s',
+    (text) => {
+      expect(parse(text)).toMatchObject({
+        action: 'create',
+        objectType: 'image',
+        properties: { name: '小猫' },
+        prompt: text,
+        requiresGeneration: true,
+      })
+    },
+  )
 
   it('creates the object after the drawing verb instead of the reference object', () => {
     const command = parseRuleCommand(

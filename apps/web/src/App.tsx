@@ -7,6 +7,7 @@ import {
 } from 'react'
 import type {
   DrawingCommand,
+  GeneratedAsset,
   Layer,
   Project,
   SceneObject,
@@ -25,7 +26,10 @@ import {
 } from './features/project/downloads'
 import { resolveTarget } from './features/commands/resolveTarget'
 import { recolorAssetUrl } from './features/assets/recolor'
-import { shouldBuildCharacterAsset } from './features/generation/generationStrategy'
+import {
+  shouldBuildCharacterAsset,
+  shouldGenerateCohesiveScene,
+} from './features/generation/generationStrategy'
 import {
   planLayerRelativeToTarget,
   planGeneratedLayerLayout,
@@ -167,6 +171,10 @@ function localAccessoryAsset(accessory: string) {
   return null
 }
 
+type GeneratedAssetPayload = {
+  asset: GeneratedAsset
+}
+
 function voiceCandidateIndex(text: string, candidates: Layer[]): number {
   const ordinal = /(?:第)?([一二两三四五六七八九\d]+)个/.exec(text)?.[1]
   const ordinalIndexes: Record<string, number> = {
@@ -279,12 +287,86 @@ function App() {
       const sceneImageDataUrl = canvasRef.current?.toDataUrl() ?? undefined
       // 多对象创建流程：当 LLM 返回了 objects 数组时，逐个生成并创建图层
       if (command.objects && command.objects.length > 0) {
+        if (
+          shouldGenerateCohesiveScene(
+            command.objects,
+            command.prompt,
+            project.layers.length > 0,
+          )
+        ) {
+          const subjectNames = command.objects
+            .filter((object) => !object.isBackground)
+            .map((object) => object.name)
+          const scenePrompt = [
+            command.prompt,
+            command.sceneSummary,
+            `Create one complete scene containing ${subjectNames.join('、')}. Their interaction must be the clear visual focus.`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+          setStatus('正在生成完整叙事场景…')
+          try {
+            const response = await fetch('/api/assets/generate', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                schemaVersion: 1,
+                commandId: `${command.id}-cohesive-scene`,
+                prompt: scenePrompt,
+                style: command.style,
+                width: project.canvas.width,
+                height: project.canvas.height,
+                background: 'opaque',
+                enhancedPrompt: true,
+                generationMode: 'scene',
+                sceneContext,
+              }),
+            })
+            if (!response.ok) {
+              setStatus(
+                await readApiError(response, '生成完整场景失败，作品未修改。'),
+              )
+              return false
+            }
+            const payload = (await response.json()) as GeneratedAssetPayload
+            const layer = addReadyLayer({
+              name: `${subjectNames.join('、')}场景`,
+              type: 'image',
+              source: payload.asset.source,
+              assetUrl: payload.asset.url,
+              generation: payload.asset.generation,
+              prompt: scenePrompt,
+              semanticDescription:
+                command.sceneSummary ?? command.prompt ?? scenePrompt,
+              x: 0,
+              y: 0,
+              width: project.canvas.width,
+              height: project.canvas.height,
+              createdBy: 'voice',
+            })
+            if (command.style && command.style !== project.globalStyle) {
+              useProjectStore.getState().replaceProject(
+                {
+                  ...useProjectStore.getState().project,
+                  globalStyle: command.style,
+                  updatedAt: new Date().toISOString(),
+                },
+                false,
+              )
+            }
+            setStatus(`已生成完整场景“${layer.name}”`)
+            return true
+          } catch {
+            setStatus('生成完整场景时出错，作品未修改。')
+            return false
+          }
+        }
         const totalObjects = command.objects.length
         let completedObjects = 0
         setStatus(`正在生成 ${totalObjects} 个对象 (0/${totalObjects})…`)
         const generated: Array<{
           object: SceneObject
-          asset: { url: string; source: 'generated' | 'preset' }
+          asset: GeneratedAsset
           characterAssetId?: string
         }> = []
         for (const obj of command.objects as SceneObject[]) {
@@ -426,9 +508,7 @@ function App() {
               )
               return false
             }
-            const payload = (await response.json()) as {
-              asset: { url: string; source: 'generated' | 'preset' }
-            }
+            const payload = (await response.json()) as GeneratedAssetPayload
             generated.push({
               object: obj,
               asset: payload.asset,
@@ -454,6 +534,7 @@ function App() {
             type: 'image',
             source: asset.source,
             assetUrl: asset.url,
+            generation: asset.generation,
             prompt: object.prompt,
             negativePrompt: object.negativePrompt,
             semanticDescription: object.prompt,
@@ -521,9 +602,7 @@ function App() {
         setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
         return false
       }
-      const payload = (await response.json()) as {
-        asset: { url: string; source: 'generated' | 'preset' }
-      }
+      const payload = (await response.json()) as GeneratedAssetPayload
       const layout = relationTarget
         ? planLayerRelativeToTarget(project, relationTarget, {
             position: command.properties?.position,
@@ -541,6 +620,7 @@ function App() {
         type: 'image',
         source: payload.asset.source,
         assetUrl: payload.asset.url,
+        generation: payload.asset.generation,
         prompt: command.prompt,
         semanticDescription: relationTarget
           ? `${command.prompt ?? command.properties?.name ?? '新元素'}，位于${relationTarget.name}附近`
@@ -657,14 +737,13 @@ function App() {
           )
           return false
         }
-        const payload = (await response.json()) as {
-          asset: { url: string; source: 'generated' | 'preset' }
-        }
+        const payload = (await response.json()) as GeneratedAssetPayload
         addReadyLayer({
           name: accessory,
           type: 'image',
           source: payload.asset.source,
           assetUrl: payload.asset.url,
+          generation: payload.asset.generation,
           prompt: accessoryPrompt,
           negativePrompt: accessoryNegativePrompt,
           semanticDescription: `${target.name}上的${accessory}`,
@@ -686,6 +765,7 @@ function App() {
           replaceLayerAsset(target.id, {
             assetUrl: recoloredAssetUrl,
             source: target.source,
+            generation: target.generation,
             prompt: target.prompt,
             negativePrompt: target.negativePrompt,
             semanticDescription: `${target.semanticDescription ?? target.prompt ?? target.name}，本地改色为${requestedColor}`,
@@ -774,12 +854,11 @@ function App() {
         setStatus(await readApiError(response, '重新生成失败，已保留原素材。'))
         return false
       }
-      const payload = (await response.json()) as {
-        asset: { url: string; source: 'generated' | 'preset' }
-      }
+      const payload = (await response.json()) as GeneratedAssetPayload
       replaceLayerAsset(target.id, {
         assetUrl: payload.asset.url,
         source: payload.asset.source,
+        generation: payload.asset.generation,
         prompt: enhancedPrompt,
         negativePrompt,
         semanticDescription: command.prompt ?? enhancedPrompt,

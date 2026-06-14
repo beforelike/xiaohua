@@ -590,6 +590,94 @@ describe('App', () => {
     })
   })
 
+  it('generates a relational scene once instead of assembling isolated assets', async () => {
+    const fetchMock = stubApi({
+      '/api/commands/parse': () =>
+        jsonResponse({
+          command: {
+            schemaVersion: 1,
+            id: 'cat-chases-mouse',
+            action: 'create',
+            prompt: '画一只猫在厨房里追老鼠',
+            style: 'photorealistic editorial photography',
+            sceneSummary: '一只猫在乡村厨房里追逐一只老鼠',
+            objects: [
+              {
+                name: '厨房',
+                prompt: 'an empty rustic kitchen',
+                background: 'opaque',
+                isBackground: true,
+                position: 'center',
+                size: 'full',
+              },
+              {
+                name: '猫',
+                prompt: 'an isolated cat pouncing',
+                background: 'transparent',
+                isBackground: false,
+                position: 'left',
+                size: 'medium',
+              },
+              {
+                name: '老鼠',
+                prompt: 'an isolated mouse fleeing',
+                background: 'transparent',
+                isBackground: false,
+                position: 'right',
+                size: 'small',
+              },
+            ],
+            requiresGeneration: true,
+            confidence: 1,
+          },
+        }),
+      '/api/assets/generate': () =>
+        jsonResponse({
+          asset: {
+            id: 'd'.repeat(24),
+            url: '/api/assets/cohesive-scene',
+            source: 'generated',
+          },
+        }),
+    })
+    render(<App />)
+
+    fireEvent.change(
+      screen.getByPlaceholderText('例如：把太阳变小一点并移到右上角'),
+      { target: { value: '画一只猫在厨房里追老鼠' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: '执行' }))
+
+    await waitFor(() =>
+      expect(useProjectStore.getState().project.layers).toHaveLength(1),
+    )
+    const generationCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === '/api/assets/generate',
+    )
+    expect(generationCalls).toHaveLength(1)
+    const body = JSON.parse(String(generationCalls[0]?.[1]?.body)) as {
+      generationMode: string
+      width: number
+      height: number
+      prompt: string
+    }
+    expect(body).toMatchObject({
+      generationMode: 'scene',
+      width: 1024,
+      height: 768,
+    })
+    expect(body.prompt).toContain('猫在厨房里追老鼠')
+    expect(useProjectStore.getState().project.layers[0]).toMatchObject({
+      name: '猫、老鼠场景',
+      assetUrl: '/api/assets/cohesive-scene',
+      x: 0,
+      y: 0,
+      width: 1024,
+      height: 768,
+    })
+    expect(useProjectStore.getState().project.characterAssets).toHaveLength(0)
+  })
+
   it('uses browser speech recognition as an optional fallback', async () => {
     const start = vi.fn()
     class Recognition {

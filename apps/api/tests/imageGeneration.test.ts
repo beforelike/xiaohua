@@ -30,7 +30,7 @@ async function createConfig(
     LLM_ENHANCE_PROMPT: false,
     IMAGE_PROVIDER: imageProvider,
     GEMINI_IMAGE_BASE_URL: 'http://127.0.0.1:8045/v1',
-    GEMINI_IMAGE_MODEL: 'gemini-3-pro-image',
+    GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
     GEMINI_VISION_MODEL: 'gemini-3-flash',
     SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
     SD_STEPS: 28,
@@ -122,10 +122,11 @@ describe('imageGeneration', () => {
       ),
     )
 
-    await generateAsset(request, config, fetcher)
-    await generateAsset(request, config, fetcher)
+    const first = await generateAsset(request, config, fetcher)
+    const second = await generateAsset(request, config, fetcher)
 
     expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(second.generation).toEqual(first.generation)
   })
 
   it('separates cache entries when style or negative prompt changes', async () => {
@@ -157,10 +158,73 @@ describe('imageGeneration', () => {
     const firstBody = JSON.parse(requestBody as string) as {
       prompt: string
       negative_prompt: string
+      seed: number
+    }
+    const secondRequestBody = fetcher.mock.calls[1]?.[1]?.body
+    expect(typeof secondRequestBody).toBe('string')
+    const secondBody = JSON.parse(secondRequestBody as string) as {
+      seed: number
     }
     expect(firstBody.prompt).toContain('watercolor')
+    expect(firstBody.prompt).toContain('delicate watercolor painting')
     expect(firstBody.prompt).toContain('isolated object')
     expect(firstBody.negative_prompt).toContain('photo')
+    expect(firstBody.seed).toBe(Number.parseInt(first.id.slice(0, 8), 16))
+    expect(secondBody.seed).toBe(Number.parseInt(second.id.slice(0, 8), 16))
+    expect(firstBody.seed).not.toBe(secondBody.seed)
+    expect(first.generation).toMatchObject({
+      provider: 'stable-diffusion-webui',
+      mode: 'standard',
+      prompt: firstBody.prompt,
+      negativePrompt: firstBody.negative_prompt,
+      seed: firstBody.seed,
+      width: 256,
+      height: 256,
+      steps: config.SD_STEPS,
+      cfgScale: config.SD_CFG_SCALE,
+      sampler: config.SD_SAMPLER,
+      pipelineVersion: 15,
+    })
+    expect(first.generation?.style).toContain(
+      'delicate watercolor painting of {prompt}',
+    )
+  })
+
+  it('adds scene composition constraints to WebUI scene tasks', async () => {
+    const config = await createConfig()
+    const png = await coloredSubjectPng()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+        status: 200,
+      }),
+    )
+
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'cohesive-webui-scene',
+        prompt: 'a cat chases a mouse through a kitchen',
+        background: 'opaque',
+        generationMode: 'scene',
+      },
+      config,
+      fetcher,
+    )
+
+    const requestBody = fetcher.mock.calls[0]?.[1]?.body
+    expect(typeof requestBody).toBe('string')
+    const body = JSON.parse(requestBody as string) as {
+      prompt: string
+      negative_prompt: string
+    }
+    expect(body.prompt).toContain('one complete cohesive scene')
+    expect(body.prompt).toContain('single camera perspective')
+    expect(body.prompt).toContain('subjects interact naturally')
+    expect(body.prompt).not.toContain('isolated object')
+    expect(body.negative_prompt).toContain('isolated asset')
+    expect(body.negative_prompt).toContain('empty background plate')
+    expect(asset.generation?.mode).toBe('scene')
+    expect(asset.generation?.prompt).toBe(body.prompt)
   })
 
   it('separates cache entries by image provider', async () => {
@@ -224,7 +288,6 @@ describe('imageGeneration', () => {
     )
 
     expect(asset.source).toBe('generated')
-    expect(fetcher).toHaveBeenCalledOnce()
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       'http://127.0.0.1:8045/v1/chat/completions',
     )
@@ -235,10 +298,91 @@ describe('imageGeneration', () => {
       size: string
       messages: Array<{ content: string }>
     }
-    expect(body.model).toBe('gemini-3-pro-image')
+    expect(body.model).toBe('gemini-3.1-flash-image')
     expect(body.size).toBe('1024x1024')
     expect(body.messages[0]?.content).toContain(
       'edge-to-edge environmental background plate',
+    )
+    expect(asset.generation).toMatchObject({
+      provider: 'gemini-image',
+      mode: 'standard',
+      prompt: body.messages[0]?.content,
+      negativePrompt: '',
+      seed: Number.parseInt(asset.id.slice(0, 8), 16),
+      width: 256,
+      height: 256,
+      steps: config.SD_STEPS,
+      cfgScale: config.SD_CFG_SCALE,
+      sampler: config.SD_SAMPLER,
+      pipelineVersion: 15,
+    })
+    expect(asset.generation?.style).toContain(
+      'soft hand-painted storybook illustration of {prompt}',
+    )
+
+    const cached = await generateAsset(
+      { ...request, background: 'opaque' },
+      config,
+      fetcher,
+    )
+
+    expect(cached.generation).toEqual(asset.generation)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  it('asks Gemini for one cohesive image in scene mode', async () => {
+    const config = {
+      ...(await createConfig()),
+      IMAGE_PROVIDER: 'gemini-image' as const,
+      GEMINI_IMAGE_API_KEY: 'local-test-key',
+    }
+    const png = await sharp({
+      create: {
+        width: 32,
+        height: 24,
+        channels: 3,
+        background: '#876543',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `data:image/png;base64,${png.toString('base64')}`,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    await generateAsset(
+      {
+        ...request,
+        prompt: 'A cat chases a mouse through a rustic kitchen',
+        background: 'opaque',
+        generationMode: 'scene',
+      },
+      config,
+      fetcher,
+    )
+
+    const requestBody = fetcher.mock.calls[0]?.[1]?.body
+    expect(typeof requestBody).toBe('string')
+    const body = JSON.parse(requestBody as string) as {
+      messages: Array<{ content: string }>
+    }
+    expect(body.messages[0]?.content).toContain(
+      'complete requested scene edge to edge as one cohesive image',
+    )
+    expect(body.messages[0]?.content).toContain('interaction unmistakable')
+    expect(body.messages[0]?.content).not.toContain(
+      'environmental background plate',
     )
   })
 
@@ -316,18 +460,106 @@ describe('imageGeneration', () => {
     )
   })
 
-  it('uses a local vector preset for common foreground objects before calling Gemini', async () => {
+  it('does not reject an edited layer when an optional interaction target is absent', async () => {
     const config = {
       ...(await createConfig()),
       IMAGE_PROVIDER: 'gemini-image' as const,
       GEMINI_IMAGE_API_KEY: 'local-test-key',
     }
-    const fetcher = vi.fn<typeof fetch>()
+    const png = await coloredSubjectPng()
+    await writeFile(
+      path.join(config.ASSET_CACHE_DIR, 'a'.repeat(24) + '.png'),
+      png,
+    )
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: `data:image/png;base64,${png.toString('base64')}`,
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    subjectCount: 1,
+                    matchesRequestedSubject: false,
+                    actionClearlyVisible: true,
+                    identityPreserved: false,
+                    issues: ['butterfly is missing'],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
 
     const asset = await generateAsset(
       {
         ...request,
-        commandId: 'local-red-sun',
+        commandId: 'edited-cat-with-optional-target',
+        prompt: 'a cat jumping toward a butterfly',
+        referenceAssetId: 'a'.repeat(24),
+        preserveColors: false,
+        preservePose: false,
+      },
+      config,
+      fetcher,
+    )
+
+    expect(asset.source).toBe('generated')
+    const auditBody = JSON.parse(
+      fetcher.mock.calls[1]?.[1]?.body as string,
+    ) as {
+      messages: Array<{
+        content: Array<{ type: string; text?: string }>
+      }>
+    }
+    expect(auditBody.messages[0]?.content[0]?.text).toContain(
+      'interaction target',
+    )
+  })
+
+  it('uses the configured Gemini provider for common foreground objects', async () => {
+    const config = {
+      ...(await createConfig()),
+      IMAGE_PROVIDER: 'gemini-image' as const,
+      GEMINI_IMAGE_API_KEY: 'local-test-key',
+    }
+    const png = await coloredSubjectPng()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `data:image/png;base64,${png.toString('base64')}`,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'gemini-red-sun',
         prompt: '画一个红色太阳',
       },
       config,
@@ -336,12 +568,12 @@ describe('imageGeneration', () => {
     const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
 
     expect(asset).toMatchObject({
-      source: 'preset',
-      mimeType: 'image/svg+xml',
+      source: 'generated',
+      mimeType: 'image/png',
       backgroundRemoved: true,
     })
-    expect(stored?.body.toString()).toContain('#dc2626')
-    expect(fetcher).not.toHaveBeenCalled()
+    expect(stored?.mimeType).toBe('image/png')
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('downloads authenticated Gemini image URLs', async () => {
@@ -664,6 +896,26 @@ describe('imageGeneration', () => {
 
     expect(asset).toMatchObject({ source: 'preset', mimeType: 'image/svg+xml' })
     expect(stored?.body.toString()).toContain('<svg')
+  })
+
+  it('keeps fast local vector presets in explicit mock mode', async () => {
+    const config = await createConfig('mock')
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'mock-red-sun',
+        prompt: '画一个红色太阳',
+      },
+      config,
+    )
+    const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
+
+    expect(asset).toMatchObject({
+      source: 'preset',
+      mimeType: 'image/svg+xml',
+      backgroundRemoved: true,
+    })
+    expect(stored?.body.toString()).toContain('#dc2626')
   })
 
   it('rejects unsafe asset IDs', async () => {

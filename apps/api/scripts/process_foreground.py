@@ -9,7 +9,9 @@ from PIL import Image
 from rembg import new_session, remove
 
 
-def reject_multiple_subjects(alpha: np.ndarray) -> None:
+def reject_multiple_subjects(
+    alpha: np.ndarray, expected_subjects: int
+) -> None:
     binary = (alpha > 32).astype(np.uint8)
     separated = cv2.morphologyEx(
         binary, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)
@@ -21,13 +23,15 @@ def reject_multiple_subjects(alpha: np.ndarray) -> None:
         for index in range(1, count)
         if int(stats[index, cv2.CC_STAT_AREA]) >= image_area * 0.025
     ]
-    if len(major_components) > 1:
+    if len(major_components) > expected_subjects:
         raise ValueError(
             f"MULTIPLE_MAJOR_SUBJECTS:{len(major_components)}"
         )
 
 
-def select_components(alpha: np.ndarray) -> np.ndarray:
+def select_components(
+    alpha: np.ndarray, expected_subjects: int
+) -> np.ndarray:
     binary = (alpha > 24).astype(np.uint8)
     count, labels, stats, centroids = cv2.connectedComponentsWithStats(
         binary, 8
@@ -53,12 +57,13 @@ def select_components(alpha: np.ndarray) -> np.ndarray:
         raise ValueError("NO_FOREGROUND_COMPONENT")
 
     ranked.sort(reverse=True)
-    primary_index = ranked[0][1]
-    primary = (labels == primary_index).astype(np.uint8)
-    expanded = cv2.dilate(primary, np.ones((15, 15), np.uint8))
-    kept = primary.copy()
+    primary_indexes = [
+        item[1] for item in ranked[:expected_subjects]
+    ]
+    kept = np.isin(labels, primary_indexes).astype(np.uint8)
+    expanded = cv2.dilate(kept, np.ones((15, 15), np.uint8))
 
-    for _, index, area in ranked[1:]:
+    for _, index, area in ranked[expected_subjects:]:
         component = (labels == index).astype(np.uint8)
         if area >= image_area * 0.002 and np.any(component & expanded):
             kept |= component
@@ -198,6 +203,9 @@ def main() -> None:
     parser.add_argument("--reference")
     parser.add_argument("--preserve-colors", action="store_true")
     parser.add_argument("--preserve-shape", action="store_true")
+    parser.add_argument(
+        "--expected-subjects", type=int, default=1, choices=range(1, 11)
+    )
     args = parser.parse_args()
     source = sys.stdin.buffer.read()
     if not source:
@@ -219,8 +227,10 @@ def main() -> None:
     if rgba is None or rgba.ndim != 3 or rgba.shape[2] != 4:
         raise ValueError("INVALID_SEGMENTATION_OUTPUT")
 
-    reject_multiple_subjects(rgba[:, :, 3])
-    rgba[:, :, 3] = select_components(rgba[:, :, 3])
+    reject_multiple_subjects(rgba[:, :, 3], args.expected_subjects)
+    rgba[:, :, 3] = select_components(
+        rgba[:, :, 3], args.expected_subjects
+    )
     metrics = validate_mask(rgba[:, :, 3])
     if args.reference:
         metrics.update(

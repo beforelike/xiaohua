@@ -51,10 +51,11 @@ function createdObjectNameFromText(text: string) {
     .map((name) => ({ name, index: text.indexOf(name) }))
     .filter((match) => match.index >= 0)
     .sort((left, right) => left.index - right.index)
-  return (
-    matches.find((match) => match.index >= createVerb)?.name ??
-    matches.at(-1)?.name
-  )
+  const afterCreate = matches.filter((match) => match.index >= createVerb)
+  if (/(?:上|里|中|边|旁)的/.test(text)) {
+    return afterCreate.at(-1)?.name ?? matches.at(-1)?.name
+  }
+  return afterCreate.at(0)?.name ?? matches.at(-1)?.name
 }
 
 function createReferenceTargetFromText(
@@ -140,6 +141,12 @@ function looksLikeEditInstruction(text: string) {
 
 function looksLikeGeneratedEdit(text: string) {
   return /(?:重新生成|重新画|重画|重绘|换成|换一个|画成|改成|变成|涂成|加上|添上|戴上|戴着|挂上|系上|拿着|抱着|改成.*风格|更.*风格)/.test(
+    text,
+  )
+}
+
+function needsGeneratedNamedObject(text: string) {
+  return /(?:背景|场景|草原|草地|草坪|森林|树林|河边|河流|小溪|溪流|湖边|湖泊|海边|海洋|天空|云层|山谷|山脉|街道|房间|室内|庭院|花园|雪地|沙漠|和|与|以及|、|还有|一起|奔跑|飞翔|跳跃|喝水|饮水|挥手|舞蹈|打斗|追逐|游泳|回头|转身|蹲下|躺下|两|二|三|四|五|六|七|八|九|十|[2-9]\d*)/.test(
     text,
   )
 }
@@ -349,6 +356,8 @@ export function parseRuleCommand(
     !(target && looksLikeEditInstruction(text))
   ) {
     const name = createdObjectNameFromText(text)
+    const requiresGeneratedNamedObject =
+      Boolean(name) && needsGeneratedNamedObject(text)
     const createTarget = createReferenceTargetFromText(
       text,
       request.context,
@@ -358,14 +367,14 @@ export function parseRuleCommand(
       ...base,
       action: 'create',
       ...(createTarget ? { target: createTarget } : {}),
-      objectType: name ? 'preset' : 'image',
+      objectType: name && !requiresGeneratedNamedObject ? 'preset' : 'image',
       prompt: request.text,
       properties: {
         ...(position ? { position } : {}),
         ...(name ? { name: canonicalObjectName(name) } : {}),
       },
-      requiresGeneration: !name,
-      confidence: name ? 0.99 : 0.88,
+      requiresGeneration: !name || requiresGeneratedNamedObject,
+      confidence: name && !requiresGeneratedNamedObject ? 0.99 : 0.88,
     })
   }
 

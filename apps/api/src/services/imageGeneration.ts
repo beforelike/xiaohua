@@ -7,8 +7,14 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
-import { composeNegativePrompt, composePositivePrompt } from './promptComposer'
-import { findPreset } from './promptPresets'
+import { requestedSubjectCount } from './promptComposer'
+import {
+  buildGeminiImageTask,
+  buildStableDiffusionTask,
+  PROMPT_PIPELINE_VERSION,
+} from './generationTask'
+
+export { buildNegativePrompt, buildPrompt } from './generationTask'
 
 interface StableDiffusionResponse {
   images?: string[]
@@ -23,11 +29,17 @@ interface GeminiImageResponse {
   }>
 }
 
-const PROMPT_PIPELINE_VERSION = 11
 const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
 const ACTION_AUDIT_PATTERN =
   /\b(?:run(?:ning)?|gallop(?:ing)?|fly(?:ing)?|jump(?:ing)?|drink(?:ing)?|swim(?:ming)?|sit(?:ting)?|stand(?:ing)?|crouch(?:ing)?|lie|lying|look(?:ing)?|gaze|gazing|head|muzzle|kneel(?:ing)?|dance|dancing|wave|waving|turn(?:ing)?)\b|奔跑|飞翔|跳跃|喝水|游泳|坐|站|蹲|躺|低头|抬头|仰望|凝视|回头|转身|挥手|舞蹈/i
+
+export function expectedSubjectCount(request: GenerateAssetRequest) {
+  return Math.max(
+    requestedSubjectCount(request.prompt),
+    requestedSubjectCount(request.identityConstraints ?? ''),
+  )
+}
 
 function animalSpeciesConstraint(prompt: string) {
   if (/\b(?:cat|cats|kitten|kittens)\b|猫/i.test(prompt)) {
@@ -40,6 +52,37 @@ function animalSpeciesConstraint(prompt: string) {
     return '(real horse animal:1.5), unmistakable equine anatomy, four long legs with hooves, horse head, mane and visible tail'
   }
   return 'real ordinary quadruped animal, biologically correct species anatomy, natural animal body and limbs'
+}
+
+function stableDiffusionPromptInput(request: GenerateAssetRequest) {
+  const generationMode = request.generationMode ?? 'standard'
+  const isAnimalCharacter = ANIMAL_CHARACTER_PATTERN.test(request.prompt)
+  const animalIdentityConstraint = isAnimalCharacter
+    ? `, ${animalSpeciesConstraint(request.prompt)}`
+    : ''
+  const prompt =
+    generationMode === 'character-sheet'
+      ? isAnimalCharacter
+        ? `${request.prompt}${animalIdentityConstraint}, veterinary animal conformation reference plate, the same animal or fixed animal group shown from front, left side, right side and rear, neutral natural standing pose on four legs, complete body from ears to hooves visible in every view, consistent coat markings and proportions, plain white studio background`
+        : `${request.prompt}, professional production character turnaround reference sheet, the same character or fixed character group shown in front view, left side view, right side view, back view, head close-up and distinctive markings detail, neutral standing pose, complete body visible in every view, consistent proportions and colors across every panel, orthographic views, plain white studio background, no action scene`
+      : generationMode === 'character-action'
+        ? isAnimalCharacter
+          ? `${request.prompt}${animalIdentityConstraint}, wildlife animal photograph, preserve species, coat colors, markings and proportions from the reference image, follow the requested animal action and four-legged pose exactly; the text prompt controls composition and body pose`
+          : `${request.prompt}, preserve identity, colors, markings and proportions from the reference image, but follow the requested action and pose exactly; the text prompt controls composition and body pose`
+        : `${request.prompt}${animalIdentityConstraint}`
+  const customNegative = [
+    request.negativePrompt,
+    generationMode === 'character-sheet'
+      ? 'cropped turnaround, inconsistent views, different character in each view'
+      : '',
+    isAnimalCharacter
+      ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, object without face, extra tails, multiple tails'
+      : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+  return { prompt, customNegative }
 }
 
 export class ImageGenerationError extends Error {
@@ -148,35 +191,6 @@ function localVectorPresetSvg(request: GenerateAssetRequest) {
     )
   }
   return null
-}
-
-export function buildPrompt(
-  userPrompt: string,
-  background: 'transparent' | 'opaque',
-  style?: string,
-  isEnhanced = false,
-): string {
-  const preset = isEnhanced ? null : findPreset(userPrompt)
-  return composePositivePrompt({
-    prompt: preset?.prompt ?? userPrompt,
-    style,
-    background,
-    enhanced: isEnhanced,
-  })
-}
-
-export function buildNegativePrompt(
-  userPrompt: string,
-  customNegative?: string,
-  background: 'transparent' | 'opaque' = 'opaque',
-): string {
-  const preset = findPreset(userPrompt)
-  return composeNegativePrompt({
-    prompt: userPrompt,
-    customNegative,
-    presetNegative: preset?.negativeExtra,
-    background,
-  })
 }
 
 export function resolveAssetPath(cacheDirectory: string, id: string) {
@@ -298,6 +312,7 @@ export async function removeForegroundWithOpenCv(
     referencePath?: string
     preserveColors?: boolean
     preservePose?: boolean
+    expectedSubjects?: number
   } = {},
 ): Promise<Buffer | null> {
   if (process.env.NODE_ENV === 'test' && !process.env.IMAGE_PROCESSOR_PYTHON) {
@@ -311,6 +326,8 @@ export async function removeForegroundWithOpenCv(
       process.env.IMAGE_PROCESSOR_PYTHON ?? 'python',
       [
         script,
+        '--expected-subjects',
+        String(options.expectedSubjects ?? 1),
         ...(options.referencePath &&
         (options.preserveColors || options.preservePose)
           ? [
@@ -444,52 +461,19 @@ async function decodeGeminiImage(
 async function generateWithGemini(
   request: GenerateAssetRequest,
   config: AppConfig,
+  id: string,
   fetcher: typeof fetch,
   cacheDirectory: string,
   includeVisualReferences = true,
 ) {
   if (!config.GEMINI_IMAGE_API_KEY) throw new Error('GEMINI_NOT_CONFIGURED')
   const apiKey = config.GEMINI_IMAGE_API_KEY
-  const foregroundInstructions =
-    request.background === 'transparent'
-      ? 'Render only the requested foreground subject as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.'
-      : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
-  const prompt = [
-    'You are the visual director for an editable layered artwork.',
-    `Artwork direction: ${request.style ?? config.SD_STYLE_PROMPT}`,
-    request.sceneContext
-      ? `Current artwork memory and composition: ${request.sceneContext}`
-      : undefined,
-    `Requested layer: ${request.prompt}`,
-    foregroundInstructions,
-    request.referenceAssetId && includeVisualReferences
-      ? 'The first reference image is the existing version of this same layer. Preserve every identity and design feature not explicitly changed by the request.'
-      : undefined,
-    request.referenceAssetId && request.preservePose
-      ? 'This is a minimal edit, not a redesign. Preserve the exact single-subject composition, pose, silhouette, scale, face, markings, and camera angle; change only the explicitly requested detail.'
-      : undefined,
-    request.referenceAssetId && request.preservePose === false
-      ? 'Use the reference image only for immutable identity, anatomy, face, body proportions, markings, materials, and colors. The old pose and old head direction are forbidden. Repose the same subject so the newly requested action is literal, unmistakable, and visibly different; every limb, head angle, gaze, and body orientation must support the new action.'
-      : undefined,
-    request.identityConstraints
-      ? `Immutable identity constraints: ${request.identityConstraints}. These are hard requirements, not suggestions.`
-      : undefined,
-    request.referenceAssetId
-      ? 'Do not redesign, age, recolor, change species, change body type, or replace the referenced subject. Keep the same recognizable individual.'
-      : undefined,
-    request.sceneImageDataUrl
-      ? 'The final reference image is the current full canvas. Match its camera, perspective, palette, lighting, rendering language, and available spatial role. Do not copy other objects into this isolated layer.'
-      : undefined,
-    request.negativePrompt
-      ? `Strictly avoid: ${request.negativePrompt}.`
-      : undefined,
-    request.background === 'transparent'
-      ? 'Show exactly one depiction of the requested subject. Never repeat it. No alternate pose, second view, turnaround, character sheet, contact sheet, grid, collage, inset, comparison, or duplicated body.'
-      : undefined,
-    'Return one polished production-ready image, not a draft, concept sheet, comparison, collage, frame, badge, or annotated design.',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  const generationTask = buildGeminiImageTask({
+    request,
+    config,
+    id,
+    includeVisualReferences,
+  })
 
   const imageReferences: string[] = []
   if (includeVisualReferences && request.referenceAssetId) {
@@ -508,7 +492,7 @@ async function generateWithGemini(
     imageReferences.push(request.sceneImageDataUrl)
   }
   const multimodalContent = [
-    { type: 'text', text: prompt },
+    { type: 'text', text: generationTask.prompt },
     ...imageReferences.map((url) => ({
       type: 'image_url',
       image_url: { url },
@@ -531,7 +515,7 @@ async function generateWithGemini(
             content:
               includeReferences && imageReferences.length > 0
                 ? multimodalContent
-                : prompt,
+                : generationTask.prompt,
           },
         ],
       }),
@@ -542,12 +526,15 @@ async function generateWithGemini(
     response = await requestImage(false)
   }
   if (!response.ok) throw new Error(`GEMINI_HTTP_${String(response.status)}`)
-  return decodeGeminiImage(
-    (await response.json()) as GeminiImageResponse,
-    fetcher,
-    apiKey,
-    config.GEMINI_IMAGE_BASE_URL,
-  )
+  return {
+    image: await decodeGeminiImage(
+      (await response.json()) as GeminiImageResponse,
+      fetcher,
+      apiKey,
+      config.GEMINI_IMAGE_BASE_URL,
+    ),
+    generation: generationTask.metadata,
+  }
 }
 
 function jsonObjectFromText(value: unknown) {
@@ -571,7 +558,10 @@ async function validateVisualSemantics(
   cacheDirectory: string,
 ) {
   const actionRequired = ACTION_AUDIT_PATTERN.test(request.prompt)
-  const identityRequired = Boolean(request.referenceAssetId)
+  const identityRequired = Boolean(
+    request.referenceAssetId && request.identityConstraints?.trim(),
+  )
+  const expectedSubjects = expectedSubjectCount(request)
   if (
     request.background !== 'transparent' ||
     (!actionRequired && !identityRequired) ||
@@ -607,11 +597,12 @@ async function validateVisualSemantics(
     identityRequired && images.length > 1
       ? 'The first image is the original identity reference. The final image is the candidate.'
       : 'The final image is the candidate.',
-    'For a transparent foreground asset there must be exactly one requested subject. Count miniature copies, secondary depictions, extra bodies, insets, and alternate poses as additional subjects.',
+    'Judge matchesRequestedSubject only by whether the primary isolated layer subject has the requested core type or species. Do not set it false because an interaction target, prop, scenery element, effect, or background mentioned in the request is absent; those belong on separate layers. Do not use pose or identity differences for this field because they have separate fields.',
+    `For this transparent foreground asset there must be exactly ${String(expectedSubjects)} requested ${expectedSubjects === 1 ? 'subject' : 'subjects'}. Count miniature copies, secondary depictions, extra bodies, insets, and alternate poses as additional subjects.`,
     actionRequired
       ? 'The requested pose, head direction, gaze, limb action, and body orientation must be literal and unmistakably visible. A vague, neutral, or contradictory pose fails.'
       : undefined,
-    'Return strict JSON only: {"subjectCount":1,"matchesRequestedSubject":true,"actionClearlyVisible":true,"identityPreserved":true,"issues":[""]}.',
+    `Return strict JSON only: {"subjectCount":${String(expectedSubjects)},"matchesRequestedSubject":true,"actionClearlyVisible":true,"identityPreserved":true,"issues":[""]}.`,
   ]
     .filter(Boolean)
     .join('\n')
@@ -649,10 +640,10 @@ async function validateVisualSemantics(
     const payload = (await response.json()) as GeminiImageResponse
     const result = jsonObjectFromText(payload.choices?.[0]?.message?.content)
     if (!result) return
-    if (result.subjectCount !== 1) {
+    if (result.subjectCount !== expectedSubjects) {
       throw new Error(`SEMANTIC_SUBJECT_COUNT:${String(result.subjectCount)}`)
     }
-    if (result.matchesRequestedSubject === false) {
+    if (!request.referenceAssetId && result.matchesRequestedSubject === false) {
       throw new Error('SEMANTIC_SUBJECT_MISMATCH')
     }
     if (actionRequired && result.actionClearlyVisible === false) {
@@ -777,6 +768,21 @@ export async function generateAsset(
 
   try {
     await readFile(pngPath)
+    const cachedGeneration =
+      config.IMAGE_PROVIDER === 'stable-diffusion-webui'
+        ? buildStableDiffusionTask({
+            request,
+            config,
+            id,
+            ...stableDiffusionPromptInput(request),
+          }).metadata
+        : config.IMAGE_PROVIDER === 'gemini-image'
+          ? buildGeminiImageTask({
+              request,
+              config,
+              id,
+            }).metadata
+          : undefined
     return {
       id,
       url: `/api/assets/${id}`,
@@ -785,37 +791,25 @@ export async function generateAsset(
       mimeType: 'image/png',
       backgroundRemoved: request.background === 'transparent',
       source: 'generated',
+      ...(cachedGeneration ? { generation: cachedGeneration } : {}),
     }
   } catch {
     // Cache miss; continue to the configured provider.
-  }
-
-  const localPreset = localVectorPresetSvg(request)
-  if (localPreset) {
-    await writeFile(svgPath, localPreset, 'utf8')
-    return {
-      id,
-      url: `/api/assets/${id}`,
-      width: request.width,
-      height: request.height,
-      mimeType: 'image/svg+xml',
-      backgroundRemoved: true,
-      source: 'preset',
-    }
   }
 
   let geminiError: Error | null = null
   if (config.IMAGE_PROVIDER === 'gemini-image') {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const generated = await generateWithGemini(
+        const geminiResult = await generateWithGemini(
           request,
           config,
+          id,
           fetcher,
           cacheDirectory,
           attempt === 0,
         )
-        const normalized = await sharp(generated)
+        const normalized = await sharp(geminiResult.image)
           .resize(request.width, request.height, {
             fit: request.background === 'transparent' ? 'contain' : 'cover',
             background:
@@ -835,6 +829,7 @@ export async function generateAsset(
         const semanticCutout =
           request.background === 'transparent'
             ? await removeForegroundWithOpenCv(normalized, {
+                expectedSubjects: expectedSubjectCount(request),
                 ...(request.referenceAssetId &&
                 (request.preserveColors || request.preservePose)
                   ? {
@@ -865,6 +860,7 @@ export async function generateAsset(
           mimeType: 'image/png',
           backgroundRemoved: request.background === 'transparent',
           source: 'generated',
+          generation: geminiResult.generation,
         }
       } catch (error) {
         geminiError =
@@ -882,43 +878,7 @@ export async function generateAsset(
     let lastError: Error | null = null
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const isEnhanced = request.enhancedPrompt ?? false
-        const isAnimalCharacter = ANIMAL_CHARACTER_PATTERN.test(request.prompt)
-        const animalIdentityConstraint = isAnimalCharacter
-          ? `, ${animalSpeciesConstraint(request.prompt)}`
-          : ''
-        const characterSheetPrompt =
-          generationMode === 'character-sheet'
-            ? isAnimalCharacter
-              ? `${request.prompt}${animalIdentityConstraint}, veterinary animal conformation reference plate, the same animal or fixed animal group shown from front, left side, right side and rear, neutral natural standing pose on four legs, complete body from ears to hooves visible in every view, consistent coat markings and proportions, plain white studio background`
-              : `${request.prompt}, professional production character turnaround reference sheet, the same character or fixed character group shown in front view, left side view, right side view, back view, head close-up and distinctive markings detail, neutral standing pose, complete body visible in every view, consistent proportions and colors across every panel, orthographic views, plain white studio background, no action scene`
-            : generationMode === 'character-action'
-              ? isAnimalCharacter
-                ? `${request.prompt}${animalIdentityConstraint}, wildlife animal photograph, preserve species, coat colors, markings and proportions from the reference image, follow the requested animal action and four-legged pose exactly; the text prompt controls composition and body pose`
-                : `${request.prompt}, preserve identity, colors, markings and proportions from the reference image, but follow the requested action and pose exactly; the text prompt controls composition and body pose`
-              : `${request.prompt}${animalIdentityConstraint}`
-        const enhancedPrompt = buildPrompt(
-          characterSheetPrompt,
-          request.background,
-          request.style ?? config.SD_STYLE_PROMPT,
-          isEnhanced,
-        )
-        const modeNegative = [
-          request.negativePrompt,
-          generationMode === 'character-sheet'
-            ? 'cropped turnaround, inconsistent views, different character in each view'
-            : '',
-          isAnimalCharacter
-            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, object without face, extra tails, multiple tails'
-            : '',
-        ]
-          .filter(Boolean)
-          .join(', ')
-        const negativePrompt = buildNegativePrompt(
-          request.prompt,
-          modeNegative,
-          request.background,
-        )
+        const stablePrompt = stableDiffusionPromptInput(request)
         let alwaysonScripts:
           | {
               controlnet: {
@@ -952,24 +912,19 @@ export async function generateAsset(
             },
           }
         }
+        const generationTask = buildStableDiffusionTask({
+          request,
+          config,
+          id,
+          ...stablePrompt,
+          ...(alwaysonScripts ? { alwaysonScripts } : {}),
+        })
         const response = await fetcher(
           `${config.SD_WEBUI_BASE_URL.replace(/\/$/, '')}/sdapi/v1/txt2img`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              prompt: enhancedPrompt,
-              negative_prompt: negativePrompt,
-              width: request.width,
-              height: request.height,
-              steps: config.SD_STEPS,
-              cfg_scale: config.SD_CFG_SCALE,
-              sampler_name: config.SD_SAMPLER,
-              batch_size: 1,
-              restore_faces: false,
-              tiling: false,
-              ...(alwaysonScripts ? { alwayson_scripts: alwaysonScripts } : {}),
-            }),
+            body: JSON.stringify(generationTask.payload),
             signal: AbortSignal.timeout(90_000),
           },
         )
@@ -991,6 +946,7 @@ export async function generateAsset(
         const semanticCutout =
           request.background === 'transparent'
             ? await removeForegroundWithOpenCv(generated, {
+                expectedSubjects: expectedSubjectCount(request),
                 ...(request.referenceAssetId &&
                 (request.preserveColors || request.preservePose)
                   ? {
@@ -1021,6 +977,7 @@ export async function generateAsset(
           mimeType: 'image/png',
           backgroundRemoved: request.background === 'transparent',
           source: 'generated',
+          generation: generationTask.metadata,
         }
       } catch (error) {
         lastError =
@@ -1036,14 +993,15 @@ export async function generateAsset(
   }
 
   // Mock mode intentionally returns a visible placeholder for tests and demos.
-  await writeFile(svgPath, fallbackSvg(request), 'utf8')
+  const localPreset = localVectorPresetSvg(request)
+  await writeFile(svgPath, localPreset ?? fallbackSvg(request), 'utf8')
   return {
     id,
     url: `/api/assets/${id}`,
     width: request.width,
     height: request.height,
     mimeType: 'image/svg+xml',
-    backgroundRemoved: false,
+    backgroundRemoved: Boolean(localPreset),
     source: 'preset',
   }
 }
