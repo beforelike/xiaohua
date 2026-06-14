@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+playwright-report
+test-results
+.cache
+package-lock.json
+README.md
+CONTRIBUTING.md
+doc
+docs

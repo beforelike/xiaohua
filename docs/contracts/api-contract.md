@@ -32,9 +32,18 @@
   "context": {
     "selectedLayerId": "layer_tree_001",
     "recentLayers": [
-      { "id": "layer_sun_001", "name": "太阳", "type": "image" }
+      {
+        "id": "layer_sun_001",
+        "name": "太阳",
+        "type": "image",
+        "prompt": "warm hand-painted sun",
+        "x": 780,
+        "y": 80,
+        "width": 180,
+        "height": 180
+      }
     ],
-    "globalStyle": "柔和童话手绘插画"
+    "globalStyle": ""
   }
 }
 ```
@@ -55,10 +64,51 @@
 }
 ```
 
+创建复合场景时，命令可包含拆分后的 `objects`：
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "cmd_002",
+  "action": "create",
+  "style": "photorealistic wildlife photography, natural colors, cinematic daylight, realistic materials",
+  "objects": [
+    {
+      "name": "草原",
+      "prompt": "wide green grassland, soft daylight",
+      "negativePrompt": "animals, people, text",
+      "background": "opaque",
+      "isBackground": true,
+      "position": "center",
+      "size": "full"
+    },
+    {
+      "name": "马",
+      "prompt": "light golden horse galloping, isolated object",
+      "negativePrompt": "complex background, multiple horses",
+      "background": "transparent",
+      "isBackground": false,
+      "position": "center",
+      "size": "medium"
+    }
+  ],
+  "requiresGeneration": true,
+  "confidence": 0.96
+}
+```
+
 要求：
 
 - 文本长度 1 到 500 字符。
 - 响应必须通过服务端 Schema 校验后返回。
+- 对象操作支持 `duplicate`、`group`、`ungroup`、`undo` 和 `redo`；这些动作不得调用图片生成接口。
+- `group` 使用 `target.ids` 指定至少两个图层；组合关系以 `groupId` 保存在项目 JSON 中。
+- 本地图层修改支持 `properties.opacity`、`opacityDelta`、`visible`、`locked` 和 `rotationDelta`，不得调用图片生成接口。
+- 一条 `modify` 指令可以同时包含位置、尺寸、旋转、透明度和可见性属性，解析器不得遗漏复合条件。
+- 创建命令配置 LLM 增强时，由 LLM 根据用户题材自动选择 `style` 并进行对象拆分。
+- 用户明确指定画风时优先遵从；未指定时自然动物与真实场景默认选择写实风格。
+- 新项目的 `globalStyle` 为空；首次生成成功后保存 LLM 选择的风格，后续对象默认保持一致。
+- `position` 使用九宫格枚举，`size` 使用 `small`、`medium`、`large` 或 `full`。
 - 超时目标 15 秒；解析请求不自动执行。
 
 ## POST /assets/generate
@@ -71,10 +121,13 @@
 {
   "schemaVersion": 1,
   "commandId": "cmd_002",
-  "prompt": "一个可爱的太阳，柔和童话手绘插画，透明背景",
+  "prompt": "a warm hand-painted sun, isolated object",
+  "negativePrompt": "text, watermark, complex background",
+  "style": "soft fairy-tale hand-painted illustration",
   "width": 512,
   "height": 512,
-  "background": "transparent"
+  "background": "transparent",
+  "enhancedPrompt": true
 }
 ```
 
@@ -96,7 +149,7 @@
 
 要求：
 
-- `commandId` 作为幂等键的一部分，重复请求应尽量复用结果。
+- `commandId`、正反向提示词、画风、尺寸和生成参数共同组成缓存键。
 - 只允许配置内的尺寸与 MIME 类型。
 - 服务端调用配置的本地 `SD_WEBUI_BASE_URL`，禁止接受客户端传入任意上游 URL。
 - 上游使用 Stable Diffusion WebUI `/sdapi/v1/txt2img`，返回的 Base64 图片转存为同源素材。

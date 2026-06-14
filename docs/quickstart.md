@@ -1,11 +1,11 @@
 # 快速开始
 
-当前仓库尚未生成应用代码。完成任务 T101-T105 后，开发与验证流程应保持如下统一接口。
+仓库已提供可直接运行的 P1 应用。本地开发默认连接 Stable Diffusion WebUI，CI 会显式使用 Mock provider。
 
 ## 环境要求
 
-- Node.js 当前维护中的 LTS 版本
-- npm
+- Node.js 22+
+- npm 10+
 - 最新版 Chrome 或 Edge
 - 本地 Stable Diffusion WebUI，启动时开启 `--api`
 - 本地 ASR 服务；未启动时使用文本 Mock
@@ -19,23 +19,34 @@ COMMAND_PROVIDER=rules
 IMAGE_PROVIDER=stable-diffusion-webui
 SD_WEBUI_BASE_URL=http://127.0.0.1:7860
 ASSET_CACHE_DIR=.cache/assets
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX=120
 ```
 
-变量名可在实现时细化，但必须同步更新 `.env.example`。本地服务地址不得硬编码在业务代码中。
+复制 `.env.example` 为 `.env` 后按需修改。本地服务地址不得写入业务请求或由客户端传入。
 
-## 预期命令
+## 启动命令
 
 ```bash
-npm install
+npm ci
 npm run dev
+```
+
+访问 `http://127.0.0.1:5173`。Vite 默认固定使用该端口，端口占用时会直接报错；API 同时允许 5173 和手动备用的 5174 来源。需要禁用真实图片生成时，将 `IMAGE_PROVIDER` 改为 `mock`；需要本地语音识别时，将 `ASR_PROVIDER` 改为 `local`。
+
+## 质量命令
+
+```bash
 npm run lint
 npm run typecheck
-npm run test
+npm run test:coverage
 npm run build
 npm run test:e2e
 ```
 
 ## 本地验收脚本
+
+以下步骤必须在目标设备的真实 Chrome 或 Edge 中执行，不能只用单元测试、组件测试或无头浏览器结果代替。验收记录需包含操作系统、浏览器版本、执行日期、预期结果和实际结果。
 
 1. 使用 `--api` 启动本地 Stable Diffusion WebUI，并确认 `http://127.0.0.1:7860/docs` 可访问。
 2. 启动本地 ASR；开发时也可使用文本 Mock。
@@ -47,6 +58,8 @@ npm run test:e2e
 8. 说“删除树”，确认其他图层保持不变。
 9. 说“保存作品”，确认下载 PNG 和 JSON。
 10. 导入 JSON，确认图层、位置和选中状态恢复。
+11. 选中已有对象并说或输入“把树画成一棵秋天的树”，确认只替换原树图层素材，图层总数和原图层 ID 均保持不变。
+12. 输入“在树旁边画一只小鸟”，确认新增一个独立小鸟图层，原树图层保持不变。
 
 ## 常见问题
 

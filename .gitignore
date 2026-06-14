@@ -7,6 +7,10 @@ test-results/
 .env.*
 !.env.example
 .cache/
+apps/web/.vite/
+apps/api/.venv-image/
+__pycache__/
+*.pyc
 *.log
 .DS_Store
 Thumbs.db
