@@ -335,6 +335,42 @@ export const apiErrorSchema = z.object({
   }),
 })
 
+/** 触发澄清回环的原因 */
+export const clarificationReasonSchema = z.enum([
+  'low_confidence',
+  'ambiguous_target',
+  'missing_target',
+])
+
+/** 澄清回环的候选项，供用户在 confirming 阶段语音/点选确认 */
+export const clarificationOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).max(120),
+  /** 目标歧义时，候选项对应的图层 ID */
+  targetId: z.string().min(1).optional(),
+})
+
+/**
+ * 澄清回环结果：置信度不足或目标存在歧义时返回，
+ * 前端据此进入 confirming 阶段，用中文向用户提问并收集确认。
+ */
+export const clarificationResultSchema = z.object({
+  kind: z.literal('clarification'),
+  reason: clarificationReasonSchema,
+  question: z.string().min(1).max(300),
+  originalText: z.string(),
+  options: z.array(clarificationOptionSchema).max(10).default([]),
+  /** 低置信度时的最佳猜测命令，用户确认后可直接执行 */
+  candidate: drawingCommandSchema.optional(),
+})
+
+/** /commands/parse 的三类返回：可执行命令 / 需澄清 / 错误 */
+export const parseCommandResultSchema = z.union([
+  drawingCommandSchema,
+  clarificationResultSchema,
+  apiErrorSchema,
+])
+
 export const appPhaseSchema = z.enum([
   'idle',
   'listening',
@@ -365,5 +401,9 @@ export type ParseCommandRequest = z.infer<typeof parseCommandRequestSchema>
 export type GenerateAssetRequest = z.infer<typeof generateAssetRequestSchema>
 export type GeneratedAsset = z.infer<typeof generatedAssetSchema>
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>
+export type ClarificationReason = z.infer<typeof clarificationReasonSchema>
+export type ClarificationOption = z.infer<typeof clarificationOptionSchema>
+export type ClarificationResult = z.infer<typeof clarificationResultSchema>
+export type ParseCommandResult = z.infer<typeof parseCommandResultSchema>
 export type AppPhase = z.infer<typeof appPhaseSchema>
 export type AppStatus = z.infer<typeof appStatusSchema>
