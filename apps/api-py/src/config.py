@@ -94,6 +94,31 @@ class Settings(BaseSettings):
         description="默认风格列表",
     )
 
+    # 命令解析配置
+    command_provider: str = Field(
+        default="hybrid",
+        description="命令解析提供者：rules=仅规则 / llm=仅大模型 / hybrid=大模型优先并回退规则",
+    )
+    command_confidence_threshold: float = Field(
+        default=0.6,
+        ge=0,
+        le=1,
+        description="解析置信度低于此阈值时触发澄清回环（请求用户确认）",
+    )
+
+    # LLM（OpenAI 兼容接口，建议本地部署如 vLLM/Ollama/LM Studio 以满足离线要求）
+    llm_base_url: str = Field(
+        default="", description="LLM OpenAI 兼容接口地址，如 http://localhost:11434/v1"
+    )
+    llm_model: str = Field(default="", description="LLM 模型名称")
+    llm_api_key: str = Field(default="", description="LLM API Key（本地服务通常可留空）")
+    llm_timeout_seconds: float = Field(
+        default=20.0, gt=0, description="LLM 请求超时时间（秒）"
+    )
+    llm_temperature: float = Field(
+        default=0.2, ge=0, le=2, description="LLM 采样温度（解析任务建议较低值以保证稳定）"
+    )
+
     # ASR 配置
     asr_provider: str = Field(default="paraformer", description="ASR 引擎")
     asr_endpoint: str = Field(default="http://localhost:10095", description="ASR 服务地址")
