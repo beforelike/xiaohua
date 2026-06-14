@@ -200,7 +200,8 @@ export function planSceneObjectLayouts(
   const foregroundEntries = objects
     .map((object, index) => ({ object, index }))
     .filter(
-      ({ object }) => !object.isBackground && (object.size ?? 'medium') !== 'full',
+      ({ object }) =>
+        !object.isBackground && (object.size ?? 'medium') !== 'full',
     )
 
   objects.forEach((object, index) => {

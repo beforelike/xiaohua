@@ -582,9 +582,7 @@ describe('App', () => {
       ]),
     )
     expect(
-      await screen.findByText(
-        '已放置 3/3 个对象占位框，但素材生成失败。',
-      ),
+      await screen.findByText('已放置 3/3 个对象占位框，但素材生成失败。'),
     ).toBeInTheDocument()
   })
 

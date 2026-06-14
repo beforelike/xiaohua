@@ -360,7 +360,11 @@ function App() {
         let failedObjects = 0
         // 先为每个对象放置"生成中"占位骨架，让画面在扩散生成完成前就立即响应
         const placedLayers = [...useProjectStore.getState().project.layers]
-        const layouts = planSceneObjectLayouts(project, objectList, placedLayers)
+        const layouts = planSceneObjectLayouts(
+          project,
+          objectList,
+          placedLayers,
+        )
         const placeholders = objectList.map((object, index) => {
           const layout = layouts[index]!
           const layer = addPlaceholderLayer({
@@ -462,9 +466,7 @@ function App() {
                 ? `生成“${obj.name}”失败：${error.message}`
                 : `生成“${obj.name}”时出错，可稍后重试。`
             markLayerFailed(placeholder.id, message)
-            setStatus(
-              `${message} 已保留占位框。`,
-            )
+            setStatus(`${message} 已保留占位框。`)
           }
         }
         if (command.style && command.style !== project.globalStyle) {
