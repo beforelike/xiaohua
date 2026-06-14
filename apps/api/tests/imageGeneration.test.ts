@@ -157,10 +157,19 @@ describe('imageGeneration', () => {
     const firstBody = JSON.parse(requestBody as string) as {
       prompt: string
       negative_prompt: string
+      seed: number
+    }
+    const secondRequestBody = fetcher.mock.calls[1]?.[1]?.body
+    expect(typeof secondRequestBody).toBe('string')
+    const secondBody = JSON.parse(secondRequestBody as string) as {
+      seed: number
     }
     expect(firstBody.prompt).toContain('watercolor')
     expect(firstBody.prompt).toContain('isolated object')
     expect(firstBody.negative_prompt).toContain('photo')
+    expect(firstBody.seed).toBe(Number.parseInt(first.id.slice(0, 8), 16))
+    expect(secondBody.seed).toBe(Number.parseInt(second.id.slice(0, 8), 16))
+    expect(firstBody.seed).not.toBe(secondBody.seed)
   })
 
   it('separates cache entries by image provider', async () => {

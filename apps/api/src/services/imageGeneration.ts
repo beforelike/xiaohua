@@ -27,7 +27,7 @@ interface GeminiImageResponse {
   }>
 }
 
-const PROMPT_PIPELINE_VERSION = 11
+const PROMPT_PIPELINE_VERSION = 12
 const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
 const ACTION_AUDIT_PATTERN =
@@ -99,6 +99,10 @@ function assetId(request: GenerateAssetRequest, config: AppConfig) {
     )
     .digest('hex')
     .slice(0, 24)
+}
+
+function seedFromAssetId(id: string) {
+  return Number.parseInt(id.slice(0, 8), 16)
 }
 
 function fallbackSvg(request: GenerateAssetRequest) {
@@ -992,6 +996,7 @@ export async function generateAsset(
               negative_prompt: negativePrompt,
               width: request.width,
               height: request.height,
+              seed: seedFromAssetId(id),
               steps: config.SD_STEPS,
               cfg_scale: config.SD_CFG_SCALE,
               sampler_name: config.SD_SAMPLER,
