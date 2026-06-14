@@ -1,0 +1,16 @@
+{
+  "default_model": "juggernautXL_v8Rundiffusion.safetensors",
+  "default_refiner": "None",
+  "default_loras": [
+    ["sd_xl_offset_example-lora_1.0.safetensors", 0.1],
+    ["add_detail_xl.safetensors", 0.5]
+  ],
+  "default_cfg_scale": 5.0,
+  "default_sampler": "dpmpp_2m_sde_gpu",
+  "default_scheduler": "karras",
+  "default_steps": 40,
+  "default_performance": "Quality",
+  "default_styles": ["Fooocus V2", "Fooocus Photograph", "Fooocus Enhance"],
+  "default_aspect_ratio": "1024*1024",
+  "default_negative_prompt": "anime, cartoon, illustration, painting, drawing, sketch, lowres, bad anatomy"
+}
