@@ -797,20 +797,6 @@ export async function generateAsset(
     // Cache miss; continue to the configured provider.
   }
 
-  const localPreset = localVectorPresetSvg(request)
-  if (localPreset) {
-    await writeFile(svgPath, localPreset, 'utf8')
-    return {
-      id,
-      url: `/api/assets/${id}`,
-      width: request.width,
-      height: request.height,
-      mimeType: 'image/svg+xml',
-      backgroundRemoved: true,
-      source: 'preset',
-    }
-  }
-
   let geminiError: Error | null = null
   if (config.IMAGE_PROVIDER === 'gemini-image') {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1007,14 +993,15 @@ export async function generateAsset(
   }
 
   // Mock mode intentionally returns a visible placeholder for tests and demos.
-  await writeFile(svgPath, fallbackSvg(request), 'utf8')
+  const localPreset = localVectorPresetSvg(request)
+  await writeFile(svgPath, localPreset ?? fallbackSvg(request), 'utf8')
   return {
     id,
     url: `/api/assets/${id}`,
     width: request.width,
     height: request.height,
     mimeType: 'image/svg+xml',
-    backgroundRemoved: false,
+    backgroundRemoved: Boolean(localPreset),
     source: 'preset',
   }
 }

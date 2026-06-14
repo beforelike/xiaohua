@@ -529,18 +529,32 @@ describe('imageGeneration', () => {
     )
   })
 
-  it('uses a local vector preset for common foreground objects before calling Gemini', async () => {
+  it('uses the configured Gemini provider for common foreground objects', async () => {
     const config = {
       ...(await createConfig()),
       IMAGE_PROVIDER: 'gemini-image' as const,
       GEMINI_IMAGE_API_KEY: 'local-test-key',
     }
-    const fetcher = vi.fn<typeof fetch>()
+    const png = await coloredSubjectPng()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `data:image/png;base64,${png.toString('base64')}`,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
 
     const asset = await generateAsset(
       {
         ...request,
-        commandId: 'local-red-sun',
+        commandId: 'gemini-red-sun',
         prompt: '画一个红色太阳',
       },
       config,
@@ -549,12 +563,12 @@ describe('imageGeneration', () => {
     const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
 
     expect(asset).toMatchObject({
-      source: 'preset',
-      mimeType: 'image/svg+xml',
+      source: 'generated',
+      mimeType: 'image/png',
       backgroundRemoved: true,
     })
-    expect(stored?.body.toString()).toContain('#dc2626')
-    expect(fetcher).not.toHaveBeenCalled()
+    expect(stored?.mimeType).toBe('image/png')
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('downloads authenticated Gemini image URLs', async () => {
@@ -877,6 +891,26 @@ describe('imageGeneration', () => {
 
     expect(asset).toMatchObject({ source: 'preset', mimeType: 'image/svg+xml' })
     expect(stored?.body.toString()).toContain('<svg')
+  })
+
+  it('keeps fast local vector presets in explicit mock mode', async () => {
+    const config = await createConfig('mock')
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'mock-red-sun',
+        prompt: '画一个红色太阳',
+      },
+      config,
+    )
+    const stored = await readAsset(config.ASSET_CACHE_DIR, asset.id)
+
+    expect(asset).toMatchObject({
+      source: 'preset',
+      mimeType: 'image/svg+xml',
+      backgroundRemoved: true,
+    })
+    expect(stored?.body.toString()).toContain('#dc2626')
   })
 
   it('rejects unsafe asset IDs', async () => {
