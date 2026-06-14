@@ -215,9 +215,7 @@ def get_available_models(model_dir: str | Path = "./models/checkpoints") -> list
         return []
 
     extensions = {".safetensors", ".ckpt", ".pt"}
-    return sorted(
-        f.name for f in dir_path.iterdir() if f.suffix.lower() in extensions
-    )
+    return sorted(f.name for f in dir_path.iterdir() if f.suffix.lower() in extensions)
 
 
 def get_available_loras(lora_dir: str | Path = "./models/loras") -> list[str]:
@@ -234,6 +232,4 @@ def get_available_loras(lora_dir: str | Path = "./models/loras") -> list[str]:
         return []
 
     extensions = {".safetensors", ".ckpt", ".pt"}
-    return sorted(
-        f.name for f in dir_path.iterdir() if f.suffix.lower() in extensions
-    )
+    return sorted(f.name for f in dir_path.iterdir() if f.suffix.lower() in extensions)

@@ -22,9 +22,7 @@ def parse_args() -> argparse.Namespace:
 
     # 模型参数
     parser.add_argument("--preset", type=str, default=None, help="预设名称")
-    parser.add_argument(
-        "--model-path", type=str, default=None, help="模型文件根目录"
-    )
+    parser.add_argument("--model-path", type=str, default=None, help="模型文件根目录")
 
     # 分享与安全
     parser.add_argument("--share", action="store_true", help="启用公网分享（通过 ngrok）")

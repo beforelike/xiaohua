@@ -3,27 +3,47 @@
 from fastapi import APIRouter
 
 from src.config import get_settings, list_presets, load_preset
+from src.services.fooocus_adapter import inspect_runtime
 
 router = APIRouter()
 
 
 @router.get("/health")
-async def health_check() -> dict[str, str]:
+async def health_check() -> dict:
     """健康检查端点
 
     返回服务运行状态，用于负载均衡和监控探针。
     """
-    return {"status": "ok", "service": "xiaohua-api", "version": "0.1.0"}
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "service": "xiaohua-api",
+        "version": "0.1.0",
+        "commandProvider": settings.command_provider,
+        "imageProvider": settings.image_provider,
+        "asrProvider": settings.asr_provider,
+        "llmConfigured": bool(
+            settings.llm_base_url and settings.llm_model and settings.llm_api_key
+        ),
+        "fooocus": inspect_runtime(settings).as_dict(),
+    }
 
 
 @router.get("/health/ready")
-async def readiness_check() -> dict[str, str | bool]:
+async def readiness_check() -> dict:
     """就绪检查端点
 
     检查服务是否准备好接收请求（模型是否已加载等）。
     骨架阶段始终返回 ready。
     """
-    return {"status": "ok", "ready": True}
+    settings = get_settings()
+    runtime = inspect_runtime(settings)
+    ready = settings.image_provider == "mock" or runtime.ready
+    return {
+        "status": "ok" if ready else "not_ready",
+        "ready": ready,
+        "fooocus": runtime.as_dict(),
+    }
 
 
 @router.get("/presets")

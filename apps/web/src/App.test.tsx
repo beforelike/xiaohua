@@ -317,7 +317,7 @@ describe('App', () => {
       y: 240,
       createdBy: 'voice',
     })
-    stubApi({
+    const fetchMock = stubApi({
       '/api/commands/parse': () =>
         jsonResponse({
           command: {
@@ -358,6 +358,13 @@ describe('App', () => {
     expect(useProjectStore.getState().project.memory.sceneSummary).toContain(
       '小鸟在树右侧',
     )
+    const generationCall = fetchMock.mock.calls.find(
+      ([url]) => url === '/api/assets/generate',
+    )
+    expect(JSON.parse(String(generationCall?.[1]?.body))).toMatchObject({
+      width: 320,
+      height: 320,
+    })
   })
 
   it('recolors SVG assets locally before falling back to image generation', async () => {
@@ -408,7 +415,7 @@ describe('App', () => {
   })
 
   it('creates separated scene layers with the suggested composition', async () => {
-    stubApi({
+    const fetchMock = stubApi({
       '/api/commands/parse': () =>
         jsonResponse({
           command: {
@@ -491,6 +498,25 @@ describe('App', () => {
     expect(useProjectStore.getState().project.characterAssets).toHaveLength(1)
     expect(useProjectStore.getState().project.globalStyle).toContain(
       'photorealistic',
+    )
+    const generationBodies = fetchMock.mock.calls
+      .filter(([url]) => url === '/api/assets/generate')
+      .map(
+        ([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>,
+      )
+    expect(generationBodies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          prompt: 'wide grassland',
+          width: 1024,
+          height: 768,
+        }),
+        expect.objectContaining({
+          prompt: 'light golden horse galloping',
+          width: 320,
+          height: 320,
+        }),
+      ]),
     )
   })
 
@@ -1106,12 +1132,10 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '执行' }))
 
     expect(
-      await screen.findByText('素材生成时出错，请稍后重试。'),
+      await screen.findByText('素材生成失败：network unavailable'),
     ).toBeInTheDocument()
-    // 占位骨架保留并标记为失败，便于用户重说指令（优雅降级），而非整段消失
     const failedLayers = useProjectStore.getState().project.layers
-    expect(failedLayers).toHaveLength(1)
-    expect(failedLayers[0]?.status).toBe('failed')
+    expect(failedLayers).toHaveLength(0)
     // 失败的临时占位不应污染创作记忆
     expect(useProjectStore.getState().project.memory).toMatchObject({
       creativeDirection: '',

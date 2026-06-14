@@ -1,55 +1,49 @@
-"""提示词路由
+"""Prompt enhancement endpoints compatible with the web client."""
 
-提供提示词增强和扩展接口。
-"""
-
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 router = APIRouter()
 
 
 class EnhancePromptRequest(BaseModel):
-    """提示词增强请求"""
-
-    prompt: str = Field(min_length=1, max_length=2000, description="原始提示词")
-    style: str = Field(default="", max_length=500, description="画风描述")
-    negative_prompt: str = Field(
-        default="", max_length=2000, alias="negativePrompt", description="负向提示词"
-    )
+    prompt: str = Field(min_length=1, max_length=2000)
+    style: str = Field(default="", max_length=500)
+    negative_prompt: str = Field(default="", alias="negativePrompt")
 
     model_config = {"populate_by_name": True}
 
 
-class EnhancePromptResponse(BaseModel):
-    """提示词增强响应"""
-
-    enhanced_prompt: str = Field(alias="enhancedPrompt", description="增强后的正向提示词")
-    enhanced_negative: str = Field(
-        alias="enhancedNegative", description="增强后的负向提示词"
-    )
+class EnhanceSingleRequest(BaseModel):
+    object_name: str = Field(alias="objectName")
+    prompt: str
+    background: str
+    global_style: str = Field(default="", alias="globalStyle")
+    previous_prompt: str = Field(default="", alias="previousPrompt")
+    scene_context: str = Field(default="", alias="sceneContext")
 
     model_config = {"populate_by_name": True}
 
 
 @router.post("/enhance")
-async def enhance_prompt(
-    request: Request,
-    body: EnhancePromptRequest,
-) -> EnhancePromptResponse:
-    """增强提示词
+async def enhance_prompt(body: EnhancePromptRequest) -> dict[str, str]:
+    return {
+        "enhancedPrompt": ", ".join(value for value in [body.style, body.prompt] if value),
+        "enhancedNegative": body.negative_prompt,
+    }
 
-    使用 GPT-2 expansion 或 LLM 对用户提示词进行增强，
-    添加质量标签和风格关键词。
 
-    Args:
-        body: 提示词增强请求
-
-    Returns:
-        EnhancePromptResponse: 增强后的正/负向提示词
-    """
-    # TODO: Task 5 实现完整的提示词增强逻辑
-    return EnhancePromptResponse(
-        enhancedPrompt=body.prompt,
-        enhancedNegative=body.negative_prompt or "",
+@router.post("/enhance-single")
+async def enhance_single(body: EnhanceSingleRequest) -> dict[str, str | bool]:
+    prompt = ", ".join(
+        value for value in [body.previous_prompt, body.prompt, body.global_style] if value
     )
+    return {
+        "prompt": prompt,
+        "negativePrompt": "text, watermark, duplicate subject, malformed anatomy",
+        "identityConstraints": body.previous_prompt or body.object_name,
+        "preserveColors": True,
+        "preservePose": not any(
+            word in body.prompt for word in ("跑", "跳", "转身", "抬头", "低头")
+        ),
+    }

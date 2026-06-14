@@ -58,21 +58,25 @@ class SceneObject(BaseModel):
     name: str = Field(min_length=1, max_length=80, description="对象名称")
     prompt: str = Field(max_length=2000, description="LLM增强后的英文正向提示词")
     identity_prompt: str | None = Field(
-        default=None, max_length=2000, alias="identityPrompt",
+        default=None,
+        max_length=2000,
+        alias="identityPrompt",
         description="不含动作和环境的稳定角色身份描述",
     )
     action_prompt: str | None = Field(
-        default=None, max_length=2000, alias="actionPrompt",
+        default=None,
+        max_length=2000,
+        alias="actionPrompt",
         description="仅描述当前动作、姿态和朝向",
     )
     negative_prompt: str | None = Field(
-        default=None, max_length=2000, alias="negativePrompt",
+        default=None,
+        max_length=2000,
+        alias="negativePrompt",
         description="LLM生成的英文负向提示词",
     )
     background: str = Field(description="背景类型：transparent 或 opaque")
-    is_background: bool = Field(
-        default=False, alias="isBackground", description="是否为场景背景层"
-    )
+    is_background: bool = Field(default=False, alias="isBackground", description="是否为场景背景层")
     position: Position = Field(default=Position.CENTER, description="建议位置")
     size: ObjectSize = Field(default=ObjectSize.MEDIUM, description="建议尺寸")
 
@@ -102,23 +106,17 @@ class CommandProperties(BaseModel):
     height: float | None = Field(default=None, gt=0)
     color: str | None = Field(default=None, max_length=80)
     text: str | None = Field(default=None, max_length=500)
-    font_family: str | None = Field(
-        default=None, max_length=120, alias="fontFamily"
-    )
+    font_family: str | None = Field(default=None, max_length=120, alias="fontFamily")
     font_size: float | None = Field(default=None, gt=0, le=512, alias="fontSize")
     font_weight: str | None = Field(default=None, alias="fontWeight")
     align: str | None = None
     stroke: str | None = Field(default=None, max_length=80)
-    stroke_width: float | None = Field(
-        default=None, ge=0, le=32, alias="strokeWidth"
-    )
+    stroke_width: float | None = Field(default=None, ge=0, le=32, alias="strokeWidth")
     rotation: float | None = None
     rotation_delta: float | None = Field(default=None, alias="rotationDelta")
     scale_delta: float | None = Field(default=None, alias="scaleDelta")
     opacity: float | None = Field(default=None, ge=0, le=1)
-    opacity_delta: float | None = Field(
-        default=None, ge=-1, le=1, alias="opacityDelta"
-    )
+    opacity_delta: float | None = Field(default=None, ge=-1, le=1, alias="opacityDelta")
     visible: bool | None = None
     locked: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=80)
@@ -137,12 +135,8 @@ class DrawingCommand(BaseModel):
     object_type: LayerType | None = Field(default=None, alias="objectType")
     prompt: str | None = Field(default=None, max_length=2000)
     style: str | None = Field(default=None, max_length=500)
-    creative_direction: str | None = Field(
-        default=None, max_length=1000, alias="creativeDirection"
-    )
-    scene_summary: str | None = Field(
-        default=None, max_length=2000, alias="sceneSummary"
-    )
+    creative_direction: str | None = Field(default=None, max_length=1000, alias="creativeDirection")
+    scene_summary: str | None = Field(default=None, max_length=2000, alias="sceneSummary")
     objects: list[SceneObject] | None = Field(default=None, max_length=10)
     properties: CommandProperties | None = None
     requires_generation: bool = Field(alias="requiresGeneration")
@@ -161,9 +155,7 @@ class RecentLayerContext(BaseModel):
     semantic_description: str | None = Field(
         default=None, max_length=2000, alias="semanticDescription"
     )
-    text_content: str | None = Field(
-        default=None, max_length=500, alias="textContent"
-    )
+    text_content: str | None = Field(default=None, max_length=500, alias="textContent")
     x: float | None = None
     y: float | None = None
     width: float | None = Field(default=None, gt=0)
@@ -178,16 +170,10 @@ class ParseCommandContext(BaseModel):
     """命令解析上下文"""
 
     selected_layer_id: str | None = Field(alias="selectedLayerId")
-    recent_layers: list[RecentLayerContext] = Field(
-        max_length=20, alias="recentLayers"
-    )
+    recent_layers: list[RecentLayerContext] = Field(max_length=20, alias="recentLayers")
     global_style: str = Field(max_length=500, alias="globalStyle")
-    creative_direction: str | None = Field(
-        default=None, max_length=1000, alias="creativeDirection"
-    )
-    scene_summary: str | None = Field(
-        default=None, max_length=2000, alias="sceneSummary"
-    )
+    creative_direction: str | None = Field(default=None, max_length=1000, alias="creativeDirection")
+    scene_summary: str | None = Field(default=None, max_length=2000, alias="sceneSummary")
     canvas: CanvasSettings | None = None
 
     model_config = {"populate_by_name": True}

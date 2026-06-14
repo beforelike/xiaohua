@@ -1,6 +1,7 @@
 import type { Layer, Project, SceneObject } from '@xiaohua/contracts'
 
 export type SceneLayout = Pick<Layer, 'x' | 'y' | 'width' | 'height'>
+export type GenerationSize = Pick<Layer, 'width' | 'height'>
 
 type ScenePosition = SceneObject['position']
 type SceneSize = SceneObject['size']
@@ -15,6 +16,9 @@ interface LayoutInput {
 
 const margin = 48
 const relationGap = 18
+const minGenerationSide = 256
+const maxGenerationSide = 1024
+const generationStep = 64
 const sizeRatio: Record<SceneSize, number> = {
   small: 0.2,
   medium: 0.32,
@@ -177,6 +181,32 @@ export function planGeneratedLayerLayout(
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(value, max))
+}
+
+function roundGenerationSide(value: number) {
+  return clamp(
+    Math.round(value / generationStep) * generationStep,
+    minGenerationSide,
+    maxGenerationSide,
+  )
+}
+
+export function generationSizeForLayout(
+  layout: GenerationSize,
+): GenerationSize {
+  const width = Math.max(1, layout.width)
+  const height = Math.max(1, layout.height)
+  const scaleUp = Math.max(1, minGenerationSide / Math.min(width, height))
+  const scaleDown = Math.min(
+    1,
+    maxGenerationSide / Math.max(width * scaleUp, height * scaleUp),
+  )
+  const scale = scaleUp * scaleDown
+
+  return {
+    width: roundGenerationSide(width * scale),
+    height: roundGenerationSide(height * scale),
+  }
 }
 
 export function planLayerRelativeToTarget(

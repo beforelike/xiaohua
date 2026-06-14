@@ -47,9 +47,7 @@ class GenerationMetadata(BaseModel):
     steps: int = Field(ge=0, description="采样步数")
     cfg_scale: float = Field(ge=0, alias="cfgScale", description="CFG Scale")
     sampler: str = Field(max_length=120, description="采样器")
-    pipeline_version: int = Field(
-        gt=0, alias="pipelineVersion", description="Pipeline 版本"
-    )
+    pipeline_version: int = Field(gt=0, alias="pipelineVersion", description="Pipeline 版本")
 
     model_config = {"populate_by_name": True}
 
@@ -60,29 +58,17 @@ class GenerateAssetRequest(BaseModel):
     schema_version: int = Field(default=1, alias="schemaVersion")
     command_id: str = Field(min_length=1, alias="commandId")
     prompt: str = Field(min_length=1, max_length=2000)
-    negative_prompt: str | None = Field(
-        default=None, max_length=2000, alias="negativePrompt"
-    )
+    negative_prompt: str | None = Field(default=None, max_length=2000, alias="negativePrompt")
     style: str | None = Field(default=None, max_length=500)
     width: int = Field(ge=256, le=1024)
     height: int = Field(ge=256, le=1024)
     background: BackgroundType
     enhanced_prompt: bool | None = Field(default=None, alias="enhancedPrompt")
-    generation_mode: GenerationMode | None = Field(
-        default=None, alias="generationMode"
-    )
-    reference_asset_id: str | None = Field(
-        default=None, alias="referenceAssetId"
-    )
-    reference_weight: float | None = Field(
-        default=None, ge=0.1, le=2, alias="referenceWeight"
-    )
-    scene_context: str | None = Field(
-        default=None, max_length=5000, alias="sceneContext"
-    )
-    scene_image_data_url: str | None = Field(
-        default=None, alias="sceneImageDataUrl"
-    )
+    generation_mode: GenerationMode | None = Field(default=None, alias="generationMode")
+    reference_asset_id: str | None = Field(default=None, alias="referenceAssetId")
+    reference_weight: float | None = Field(default=None, ge=0.1, le=2, alias="referenceWeight")
+    scene_context: str | None = Field(default=None, max_length=5000, alias="sceneContext")
+    scene_image_data_url: str | None = Field(default=None, alias="sceneImageDataUrl")
     identity_constraints: str | None = Field(
         default=None, max_length=2000, alias="identityConstraints"
     )

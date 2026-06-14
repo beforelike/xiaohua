@@ -6,7 +6,7 @@
 
 P1 本地可演示闭环已完成：分层画布、文本与语音命令、目标确认、素材生成与降级、项目导入以及 PNG/JSON 导出均可使用。CI 会执行格式检查、lint、类型检查、覆盖率测试、构建和 Chromium 端到端测试。
 
-默认配置使用规则/本地 LLM 解析，并以本地 Gemini OpenAI 兼容网关作为主图片提供方，Stable Diffusion WebUI 作为降级路径。CI 会显式使用 Mock provider；本地 ASR 可通过环境变量启用。
+默认配置使用规则/本地 LLM 解析，图片由本机 Fooocus 原生推理进程生成，不调用 Gemini 或其他云端图片 API。CI 会显式使用 Mock provider；本地 ASR 可通过环境变量启用。
 
 ![笑画分层绘图工作台](docs/assets/workspace.png)
 
@@ -27,9 +27,9 @@ P1 本地可演示闭环已完成：分层画布、文本与语音命令、目�
 - 画布：Konva / react-konva
 - 状态管理：Zustand
 - 语音识别：端侧 VAD 自动截句并上传本地 ASR，浏览器 Web Speech API 仅作可选降级
-- 图片生成：本地 Gemini OpenAI 兼容网关为主，Stable Diffusion WebUI 降级
-- 图像处理：OpenCV + rembg 透明抠图、残留清理、身份色漂检测，并由 Gemini Flash 审计主体数量、动作和参考身份
-- 服务端：Node.js 本地 API 层，统一调用 ASR、指令解析和图片生成
+- 图片生成：FastAPI 异步任务队列调用本机 Fooocus 原生 worker
+- 图像处理：Fooocus 负责 SDXL 推理，透明素材由本地 rembg 处理
+- 服务端：FastAPI 异步任务层，统一调用 ASR、指令解析和图片生成
 - 测试：Vitest、React Testing Library、Playwright
 - 代码质量：ESLint、Prettier、TypeScript 严格模式
 
@@ -37,7 +37,7 @@ P1 本地可演示闭环已完成：分层画布、文本与语音命令、目�
 
 ## 快速运行
 
-要求 Node.js 22+ 与 npm 10+。
+要求 Node.js 22+、npm 10+ 与 Python 3.11+。
 
 ```bash
 npm ci
@@ -72,7 +72,7 @@ npm run test:e2e
 ```text
 .
 ├── apps/
-│   ├── api/                 # Express 本地 API 与 provider 适配器
+│   ├── api-py/              # FastAPI、异步任务、WebSocket 与 provider 适配器
 │   └── web/                 # React + TypeScript + Konva 前端
 ├── packages/
 │   └── contracts/           # 共享 Zod Schema 与类型

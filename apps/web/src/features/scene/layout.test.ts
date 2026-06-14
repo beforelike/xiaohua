@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Layer } from '@xiaohua/contracts'
 import { createLayer, createProject } from '../project/model'
 import {
+  generationSizeForLayout,
   planGeneratedLayerLayout,
   planLayerRelativeToTarget,
   planSceneObjectLayout,
@@ -135,5 +136,20 @@ describe('scene layout planning', () => {
 
     expect(layout.x).toBe(tree.x + tree.width + 18)
     expect(layout.y).toBe(tree.y + tree.height / 2 - layout.height / 2)
+  })
+
+  it('converts placeholder frames to model-friendly generation dimensions', () => {
+    expect(generationSizeForLayout({ width: 1024, height: 768 })).toEqual({
+      width: 1024,
+      height: 768,
+    })
+    expect(generationSizeForLayout({ width: 205, height: 205 })).toEqual({
+      width: 256,
+      height: 256,
+    })
+    expect(generationSizeForLayout({ width: 220, height: 320 })).toEqual({
+      width: 256,
+      height: 384,
+    })
   })
 })

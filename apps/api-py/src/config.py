@@ -8,6 +8,7 @@
 
 import json
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,21 @@ _CONFIG_SEARCH_PATHS = [
     Path("config.json"),
     Path.home() / ".xiaohua" / "config.json",
 ]
+_ROOT_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+_LEGACY_ENV_MAP = {
+    "COMMAND_PROVIDER": "command_provider",
+    "LLM_BASE_URL": "llm_base_url",
+    "LLM_MODEL": "llm_model",
+    "LLM_API_KEY": "llm_api_key",
+    "FOOOCUS_PATH": "fooocus_path",
+    "FOOOCUS_PYTHON": "fooocus_python",
+    "SD_STEPS": "default_steps",
+    "SD_CFG_SCALE": "default_cfg_scale",
+    "SD_SAMPLER": "default_sampler",
+    "ASSET_CACHE_DIR": "asset_cache_dir",
+    "ASR_PROVIDER": "asr_provider",
+    "ASR_BASE_URL": "asr_endpoint",
+}
 
 
 class ModelPaths(BaseSettings):
@@ -95,8 +111,34 @@ class Settings(BaseSettings):
     )
 
     # ASR 配置
-    asr_provider: str = Field(default="paraformer", description="ASR 引擎")
-    asr_endpoint: str = Field(default="http://localhost:10095", description="ASR 服务地址")
+    asr_provider: str = Field(default="mock", description="ASR 引擎")
+    asr_endpoint: str = Field(default="http://localhost:9000", description="ASR 服务地址")
+
+    # 命令解析与提示词增强
+    command_provider: str = Field(default="rules", description="rules / llm / hybrid")
+    command_confidence_threshold: float = Field(default=0.6, ge=0, le=1)
+    llm_base_url: str = Field(default="")
+    llm_model: str = Field(default="")
+    llm_api_key: str = Field(default="")
+    llm_timeout_seconds: float = Field(default=20, gt=0)
+    llm_temperature: float = Field(default=0.2, ge=0, le=2)
+
+    # 图片生成
+    image_provider: str = Field(
+        default="fooocus",
+        description="fooocus / mock（mock 仅用于自动化测试）",
+    )
+    fooocus_path: str = Field(
+        default=r"C:\Users\woo_w\Downloads\Fooocus-main\Fooocus-main",
+        description="Fooocus 源码根目录",
+    )
+    fooocus_python: str = Field(
+        default="python",
+        description="安装了 Fooocus CUDA 依赖的 Python 可执行文件",
+    )
+    fooocus_timeout_seconds: float = Field(default=600, gt=0)
+    asset_cache_dir: str = Field(default="../../.cache/assets")
+    image_timeout_seconds: float = Field(default=180, gt=0)
 
     # 输出目录
     output_dir: str = Field(default="./outputs", description="生成图片输出目录")
@@ -166,6 +208,28 @@ def load_config_json() -> dict[str, Any]:
     return {}
 
 
+def load_legacy_root_env() -> dict[str, Any]:
+    """Map the existing root environment file onto FastAPI settings."""
+    if not _ROOT_ENV_PATH.exists():
+        return {}
+    values: dict[str, Any] = {}
+    for raw_line in _ROOT_ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        field = (
+            key.removeprefix("XIAOHUA_").lower()
+            if key.startswith("XIAOHUA_")
+            else _LEGACY_ENV_MAP.get(key)
+        )
+        if not field or f"XIAOHUA_{field.upper()}" in os.environ:
+            continue
+        values[field] = value.strip()
+    return values
+
+
 def list_presets(presets_dir: Path | None = None) -> list[str]:
     """列出所有可用的预设名称
 
@@ -219,6 +283,7 @@ def build_settings(cli_overrides: dict[str, Any] | None = None) -> Settings:
     # 合并：preset < config.json < (env 由 Pydantic 自动处理) < CLI
     merged: dict[str, Any] = {}
     merged.update(preset_data)
+    merged.update(load_legacy_root_env())
     merged.update(config_data)
     merged.update(cli_overrides)
 

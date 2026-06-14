@@ -19,12 +19,12 @@ export default defineConfig({
     env: {
       WEB_PORT: '5174',
       API_TARGET: 'http://127.0.0.1:8788',
-      PORT: '8788',
-      WEB_ORIGIN: 'http://127.0.0.1:5174',
-      COMMAND_PROVIDER: 'rules',
-      LLM_ENHANCE_PROMPT: 'false',
-      IMAGE_PROVIDER: 'mock',
-      ASR_PROVIDER: 'mock',
+      XIAOHUA_HOST: '127.0.0.1',
+      XIAOHUA_PORT: '8788',
+      XIAOHUA_CORS_ORIGINS: '["http://127.0.0.1:5174"]',
+      XIAOHUA_COMMAND_PROVIDER: 'rules',
+      XIAOHUA_IMAGE_PROVIDER: 'mock',
+      XIAOHUA_ASR_PROVIDER: 'mock',
     },
   },
   projects: [

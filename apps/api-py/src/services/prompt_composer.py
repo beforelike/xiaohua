@@ -101,9 +101,9 @@ def apply_style_template(
         return prompt, negative_prompt
 
     styled_positive = template["positive"].replace("{prompt}", prompt)
-    styled_negative = f"{negative_prompt}, {template['negative']}" if negative_prompt else template[
-        "negative"
-    ]
+    styled_negative = (
+        f"{negative_prompt}, {template['negative']}" if negative_prompt else template["negative"]
+    )
 
     return styled_positive, styled_negative
 

@@ -32,6 +32,8 @@ export interface ProjectStore {
    * 从而把感知延迟降到最低（语音话音刚落画面即响应）。
    */
   addPlaceholderLayer: (input: NewLayer) => Layer
+  /** 丢弃未生成成功的临时图层，不把失败骨架留在作品中。 */
+  discardPlaceholderLayer: (id: string) => boolean
   /** 将占位图层标记为生成失败（优雅降级：保留骨架并提示用户可重说指令）。 */
   markLayerFailed: (id: string, message?: string) => boolean
   replaceLayerAsset: (
@@ -132,6 +134,31 @@ export function createProjectStore(
       // 占位骨架是临时状态，暂不刷新场景记忆，待 replaceLayerAsset 成稿后再纳入。
       set(withHistory(state, addLayer(current, layer, now())))
       return layer
+    },
+    discardPlaceholderLayer: (id) => {
+      const state = get()
+      const current = state.project
+      if (!current.layers.some((layer) => layer.id === id)) return false
+      const layers = current.layers.filter((layer) => layer.id !== id)
+      set({
+        project: {
+          ...current,
+          layers,
+          selectedLayerId:
+            current.selectedLayerId === id
+              ? (layers.at(-1)?.id ?? null)
+              : current.selectedLayerId,
+          updatedAt: now(),
+        },
+        lastResult: null,
+        undoStack: state.undoStack.filter(
+          (snapshot) => !snapshot.layers.some((layer) => layer.id === id),
+        ),
+        redoStack: state.redoStack.filter(
+          (snapshot) => !snapshot.layers.some((layer) => layer.id === id),
+        ),
+      })
+      return true
     },
     markLayerFailed: (id, message) => {
       const state = get()

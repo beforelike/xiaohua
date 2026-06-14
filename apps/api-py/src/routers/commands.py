@@ -3,8 +3,9 @@
 提供语音/文本命令的解析接口，将自然语言转换为结构化绘画命令。
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException
 
+from src.config import get_settings
 from src.models.commands import DrawingCommand, ParseCommandRequest
 from src.services.command_parser import parse_command
 
@@ -13,7 +14,6 @@ router = APIRouter()
 
 @router.post("/parse")
 async def parse_command_endpoint(
-    request: Request,
     body: ParseCommandRequest,
 ) -> dict:
     """解析绘画命令
@@ -27,7 +27,7 @@ async def parse_command_endpoint(
     Returns:
         解析后的 DrawingCommand 或错误信息
     """
-    result = parse_command(body)
+    result = parse_command(body, get_settings())
     if isinstance(result, DrawingCommand):
-        return result.model_dump(by_alias=True, exclude_none=True)
-    return result
+        return {"command": result.model_dump(by_alias=True, exclude_none=True)}
+    raise HTTPException(status_code=422, detail="暂时无法理解这条指令，请换一种说法")

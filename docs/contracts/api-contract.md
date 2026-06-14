@@ -151,9 +151,9 @@
 
 - `commandId`、正反向提示词、画风、尺寸和生成参数共同组成缓存键。
 - 只允许配置内的尺寸与 MIME 类型。
-- 服务端调用配置的本地 `SD_WEBUI_BASE_URL`，禁止接受客户端传入任意上游 URL。
-- 上游使用 Stable Diffusion WebUI `/sdapi/v1/txt2img`，返回的 Base64 图片转存为同源素材。
-- 超时 45 秒，最多重试一次；随后尝试预设素材并在 `source` 标明。
+- 服务端仅调用配置的本地 Fooocus 源码和 Python 环境，禁止接受客户端传入任意上游 URL。
+- FastAPI 通过隔离子进程提交 Fooocus 原生 `AsyncTask`，生成结果转存为同源素材。
+- 生成超时由 `XIAOHUA_FOOOCUS_TIMEOUT_SECONDS` 控制；失败必须返回明确错误，不得静默调用云端 API。
 
 ## GET /assets/:id
 

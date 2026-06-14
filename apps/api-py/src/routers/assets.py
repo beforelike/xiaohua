@@ -3,8 +3,9 @@
 提供图像素材的异步生成接口，包含任务提交、状态查询和取消。
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Response
 
+from src.config import get_settings
 from src.models.generation import (
     GenerateAssetRequest,
     TaskStatus,
@@ -12,13 +13,13 @@ from src.models.generation import (
     TaskSubmitResponse,
 )
 from src.services.async_worker import get_task_queue
+from src.services.image_generation import read_asset
 
 router = APIRouter()
 
 
 @router.post("/generate")
 async def generate_asset(
-    request: Request,
     body: GenerateAssetRequest,
 ) -> TaskSubmitResponse:
     """提交素材生成任务
@@ -38,6 +39,19 @@ async def generate_asset(
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     return TaskSubmitResponse(taskId=task.task_id)
+
+
+@router.get("/{asset_id}")
+async def get_asset(asset_id: str) -> Response:
+    asset = read_asset(asset_id, get_settings())
+    if asset is None:
+        raise HTTPException(status_code=404, detail="素材不存在")
+    body, mime_type = asset
+    return Response(
+        content=body,
+        media_type=mime_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @router.get("/tasks/{task_id}")
@@ -67,6 +81,7 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
         taskId=task.task_id,
         status=status_map.get(task.status, TaskStatus.PENDING),
         progress=task.progress,
+        result=task.results[-1] if task.results else None,
         error=task.error,
     )
 

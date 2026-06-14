@@ -6,7 +6,7 @@ import { createProjectStore } from './projectStore'
 const first = '2026-06-12T12:00:00.000Z'
 const second = '2026-06-12T12:01:00.000Z'
 const generation = {
-  provider: 'stable-diffusion-webui' as const,
+  provider: 'fooocus' as const,
   mode: 'standard' as const,
   prompt: 'masterpiece, a glowing tree',
   negativePrompt: 'low quality',
@@ -21,6 +21,30 @@ const generation = {
 }
 
 describe('projectStore', () => {
+  it('discards a failed placeholder without leaving it in history', () => {
+    const store = createProjectStore()
+    const placeholder = store.getState().addPlaceholderLayer({
+      name: '房子',
+      type: 'image',
+      source: 'generated',
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 100,
+      createdBy: 'voice',
+    })
+
+    expect(store.getState().discardPlaceholderLayer(placeholder.id)).toBe(true)
+    expect(store.getState().project.layers).toHaveLength(0)
+    expect(
+      store
+        .getState()
+        .undoStack.some((snapshot) =>
+          snapshot.layers.some((layer) => layer.id === placeholder.id),
+        ),
+    ).toBe(false)
+  })
+
   it('adds a ready layer and selects it atomically', () => {
     const store = createProjectStore(
       createProject('测试', { id: () => 'project', now: () => first }),

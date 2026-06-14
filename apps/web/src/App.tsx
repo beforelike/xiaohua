@@ -7,7 +7,6 @@ import {
 } from 'react'
 import type {
   DrawingCommand,
-  GeneratedAsset,
   Layer,
   Project,
   SceneObject,
@@ -30,7 +29,9 @@ import {
   shouldBuildCharacterAsset,
   shouldGenerateCohesiveScene,
 } from './features/generation/generationStrategy'
+import { generateAsset } from './features/generation/apiClient'
 import {
+  generationSizeForLayout,
   planLayerRelativeToTarget,
   planGeneratedLayerLayout,
   planSceneObjectLayout,
@@ -171,10 +172,6 @@ function localAccessoryAsset(accessory: string) {
   return null
 }
 
-type GeneratedAssetPayload = {
-  asset: GeneratedAsset
-}
-
 function voiceCandidateIndex(text: string, candidates: Layer[]): number {
   const ordinal = /(?:第)?([一二两三四五六七八九\d]+)个/.exec(text)?.[1]
   const ordinalIndexes: Record<string, number> = {
@@ -209,7 +206,9 @@ function App() {
   const addPlaceholderLayer = useProjectStore(
     (state) => state.addPlaceholderLayer,
   )
-  const markLayerFailed = useProjectStore((state) => state.markLayerFailed)
+  const discardPlaceholderLayer = useProjectStore(
+    (state) => state.discardPlaceholderLayer,
+  )
   const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
   const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
   const rememberIntent = useProjectStore((state) => state.rememberIntent)
@@ -310,29 +309,18 @@ function App() {
             .join('\n')
           setStatus('正在生成完整叙事场景…')
           try {
-            const response = await fetch('/api/assets/generate', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                schemaVersion: 1,
-                commandId: `${command.id}-cohesive-scene`,
-                prompt: scenePrompt,
-                style: command.style,
-                width: project.canvas.width,
-                height: project.canvas.height,
-                background: 'opaque',
-                enhancedPrompt: true,
-                generationMode: 'scene',
-                sceneContext,
-              }),
+            const payload = await generateAsset({
+              schemaVersion: 1,
+              commandId: `${command.id}-cohesive-scene`,
+              prompt: scenePrompt,
+              style: command.style,
+              width: project.canvas.width,
+              height: project.canvas.height,
+              background: 'opaque',
+              enhancedPrompt: true,
+              generationMode: 'scene',
+              sceneContext,
             })
-            if (!response.ok) {
-              setStatus(
-                await readApiError(response, '生成完整场景失败，作品未修改。'),
-              )
-              return false
-            }
-            const payload = (await response.json()) as GeneratedAssetPayload
             const layer = addReadyLayer({
               name: `${subjectNames.join('、')}场景`,
               type: 'image',
@@ -412,42 +400,21 @@ function App() {
               setStatus(
                 `正在建立“${obj.name}”的身份锚点 (${completedObjects}/${totalObjects})…`,
               )
-              const anchorResponse = await fetch('/api/assets/generate', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                  schemaVersion: 1,
-                  commandId: `${command.id}-${obj.name}-identity-anchor`,
-                  prompt: `${identityPrompt}, canonical full-body identity reference, neutral natural standing pose, three-quarter view, complete body visible`,
-                  negativePrompt:
-                    'action scene, dynamic pose, environment, landscape, text, labels, watermark, cropped body, missing limbs, inconsistent design',
-                  style: command.style,
-                  width: 768,
-                  height: 768,
-                  background: 'opaque',
-                  enhancedPrompt: true,
-                  generationMode: 'standard',
-                  sceneContext,
-                  sceneImageDataUrl,
-                }),
+              const anchorPayload = await generateAsset({
+                schemaVersion: 1,
+                commandId: `${command.id}-${obj.name}-identity-anchor`,
+                prompt: `${identityPrompt}, canonical full-body identity reference, neutral natural standing pose, three-quarter view, complete body visible`,
+                negativePrompt:
+                  'action scene, dynamic pose, environment, landscape, text, labels, watermark, cropped body, missing limbs, inconsistent design',
+                style: command.style,
+                width: 768,
+                height: 768,
+                background: 'opaque',
+                enhancedPrompt: true,
+                generationMode: 'standard',
+                sceneContext,
+                sceneImageDataUrl,
               })
-              if (!anchorResponse.ok) {
-                markLayerFailed(placeholder.id, `“${obj.name}”身份锚点生成失败`)
-                setStatus(
-                  await readApiError(
-                    anchorResponse,
-                    `建立“${obj.name}”身份锚点失败，已跳过该对象。`,
-                  ),
-                )
-                continue
-              }
-              const anchorPayload = (await anchorResponse.json()) as {
-                asset: {
-                  id: string
-                  url: string
-                  source: 'generated' | 'preset'
-                }
-              }
               // 直接用身份锚点作为 IP-Adapter 参考图登记角色，省去三视图这一额外扩散
               // 步骤，显著降低延迟；后续同名角色的新动作复用该参考即可保持一致。
               characterAsset = addCharacterAsset({
@@ -462,51 +429,39 @@ function App() {
             setStatus(
               `正在生成“${obj.name}”动作素材 (${completedObjects}/${totalObjects})…`,
             )
-            const response = await fetch('/api/assets/generate', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                schemaVersion: 1,
-                commandId: `${command.id}-${obj.name}`,
-                prompt: obj.prompt,
-                negativePrompt: obj.negativePrompt,
-                style: command.style,
-                width: 512,
-                height: 512,
-                background: obj.background,
-                enhancedPrompt: true,
-                generationMode: characterAsset
-                  ? 'character-action'
-                  : 'standard',
-                referenceAssetId: characterAsset?.referenceAssetId,
-                referenceWeight: 0.55,
-                sceneContext,
-                sceneImageDataUrl,
-              }),
+            const payload = await generateAsset({
+              ...generationSizeForLayout(placeholder),
+              schemaVersion: 1,
+              commandId: `${command.id}-${obj.name}`,
+              prompt: obj.prompt,
+              negativePrompt: obj.negativePrompt,
+              style: command.style,
+              background: obj.background,
+              enhancedPrompt: true,
+              generationMode: characterAsset ? 'character-action' : 'standard',
+              referenceAssetId: characterAsset?.referenceAssetId,
+              referenceWeight: 0.55,
+              sceneContext,
+              sceneImageDataUrl,
             })
-            if (!response.ok) {
-              markLayerFailed(placeholder.id, `“${obj.name}”生成失败，可重说指令`)
-              setStatus(
-                await readApiError(
-                  response,
-                  `生成“${obj.name}”失败，已跳过该对象。`,
-                ),
-              )
-              continue
-            }
-            const payload = (await response.json()) as GeneratedAssetPayload
             // 用真实素材替换占位骨架（位置/尺寸沿用占位时的布局）
             replaceLayerAsset(placeholder.id, {
               assetUrl: payload.asset.url,
               source: payload.asset.source,
               generation: payload.asset.generation,
-              ...(characterAsset ? { characterAssetId: characterAsset.id } : {}),
+              ...(characterAsset
+                ? { characterAssetId: characterAsset.id }
+                : {}),
             })
             completedObjects++
             setStatus(`已完成 ${completedObjects}/${totalObjects} 个对象…`)
-          } catch {
-            markLayerFailed(placeholder.id, `“${obj.name}”生成时出错`)
-            setStatus(`生成“${obj.name}”时出错，已跳过该对象。`)
+          } catch (error) {
+            discardPlaceholderLayer(placeholder.id)
+            setStatus(
+              error instanceof Error
+                ? `生成“${obj.name}”失败：${error.message}`
+                : `生成“${obj.name}”时出错，已跳过该对象。`,
+            )
           }
         }
         if (command.style && command.style !== project.globalStyle) {
@@ -578,27 +533,16 @@ function App() {
       })
       setStatus('已放置占位骨架，正在生成新素材…')
       try {
-        const response = await fetch('/api/assets/generate', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            schemaVersion: 1,
-            commandId: command.id,
-            prompt: command.prompt ?? command.properties?.name ?? '童话元素',
-            style: command.style,
-            width: 512,
-            height: 512,
-            background: 'transparent',
-            sceneContext,
-            sceneImageDataUrl,
-          }),
+        const payload = await generateAsset({
+          ...generationSizeForLayout(placeholder),
+          schemaVersion: 1,
+          commandId: command.id,
+          prompt: command.prompt ?? command.properties?.name ?? '童话元素',
+          style: command.style,
+          background: 'transparent',
+          sceneContext,
+          sceneImageDataUrl,
         })
-        if (!response.ok) {
-          markLayerFailed(placeholder.id, '素材生成失败，可重说指令')
-          setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
-          return false
-        }
-        const payload = (await response.json()) as GeneratedAssetPayload
         replaceLayerAsset(placeholder.id, {
           assetUrl: payload.asset.url,
           source: payload.asset.source,
@@ -606,9 +550,13 @@ function App() {
         })
         setStatus('新素材已经加入画布')
         return true
-      } catch {
-        markLayerFailed(placeholder.id, '素材生成失败，可重说指令')
-        setStatus('素材生成时出错，请稍后重试。')
+      } catch (error) {
+        discardPlaceholderLayer(placeholder.id)
+        setStatus(
+          error instanceof Error
+            ? `素材生成失败：${error.message}`
+            : '素材生成时出错，请稍后重试。',
+        )
         return false
       }
     }
@@ -683,29 +631,18 @@ function App() {
         } catch {
           // The deterministic accessory prompt remains usable.
         }
-        const response = await fetch('/api/assets/generate', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            schemaVersion: 1,
-            commandId: `${command.id}-accessory`,
-            prompt: accessoryPrompt,
-            negativePrompt: accessoryNegativePrompt,
-            style: command.style ?? currentProject.globalStyle,
-            width: 512,
-            height: 512,
-            background: 'transparent',
-            enhancedPrompt: true,
-            sceneContext,
-          }),
+        const payload = await generateAsset({
+          schemaVersion: 1,
+          commandId: `${command.id}-accessory`,
+          prompt: accessoryPrompt,
+          negativePrompt: accessoryNegativePrompt,
+          style: command.style ?? currentProject.globalStyle,
+          width: 512,
+          height: 512,
+          background: 'transparent',
+          enhancedPrompt: true,
+          sceneContext,
         })
-        if (!response.ok) {
-          setStatus(
-            await readApiError(response, '配饰生成失败，原对象保持不变。'),
-          )
-          return false
-        }
-        const payload = (await response.json()) as GeneratedAssetPayload
         addReadyLayer({
           name: accessory,
           type: 'image',
@@ -796,33 +733,24 @@ function App() {
           .filter(Boolean)
           .join(', updated with: ')
       }
-      const response = await fetch('/api/assets/generate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          schemaVersion: 1,
-          commandId: command.id,
-          prompt: enhancedPrompt,
-          negativePrompt,
-          style: command.style ?? currentProject.globalStyle,
-          width: 512,
-          height: 512,
-          background: 'transparent',
-          generationMode: targetReferenceId ? 'character-action' : 'standard',
-          identityConstraints,
-          preserveColors,
-          preservePose,
-          referenceAssetId: targetReferenceId,
-          referenceWeight: 0.55,
-          sceneContext,
-          sceneImageDataUrl,
-        }),
+      const payload = await generateAsset({
+        schemaVersion: 1,
+        commandId: command.id,
+        prompt: enhancedPrompt,
+        negativePrompt,
+        style: command.style ?? currentProject.globalStyle,
+        width: 512,
+        height: 512,
+        background: 'transparent',
+        generationMode: targetReferenceId ? 'character-action' : 'standard',
+        identityConstraints,
+        preserveColors,
+        preservePose,
+        referenceAssetId: targetReferenceId,
+        referenceWeight: 0.55,
+        sceneContext,
+        sceneImageDataUrl,
       })
-      if (!response.ok) {
-        setStatus(await readApiError(response, '重新生成失败，已保留原素材。'))
-        return false
-      }
-      const payload = (await response.json()) as GeneratedAssetPayload
       replaceLayerAsset(target.id, {
         assetUrl: payload.asset.url,
         source: payload.asset.source,

@@ -98,6 +98,7 @@ class TestBuildSettings:
         assert settings.port == 8000
         assert settings.default_steps == 30
         assert settings.default_sampler == "dpmpp_2m_sde_gpu"
+        assert settings.image_provider == "fooocus"
 
     def test_cli_overrides(self):
         """测试 CLI 参数覆盖默认值"""
@@ -113,10 +114,12 @@ class TestBuildSettings:
 
     def test_cli_overrides_preset(self):
         """测试 CLI 参数优先于预设"""
-        settings = build_settings({
-            "preset": "anime",
-            "default_steps": 50,
-        })
+        settings = build_settings(
+            {
+                "preset": "anime",
+                "default_steps": 50,
+            }
+        )
         # CLI 值优先
         assert settings.default_steps == 50
         # 预设值仍生效
@@ -137,3 +140,4 @@ class TestSettings:
         settings = Settings()
         assert settings.model_paths.checkpoints == "./models/checkpoints"
         assert settings.model_paths.loras == "./models/loras"
+        assert settings.fooocus_path.endswith("Fooocus-main")

@@ -31,8 +31,9 @@ async def test_readiness_check(client: AsyncClient):
     response = await client.get("/api/health/ready")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ok"
-    assert data["ready"] is True
+    assert data["status"] in {"ok", "not_ready"}
+    assert isinstance(data["ready"], bool)
+    assert "fooocus" in data
 
 
 @pytest.mark.asyncio
@@ -47,7 +48,5 @@ async def test_request_id_header(client: AsyncClient):
 async def test_custom_request_id(client: AsyncClient):
     """测试请求 ID 中间件：使用客户端提供的 request ID"""
     custom_id = "test-req-12345"
-    response = await client.get(
-        "/api/health", headers={"X-Request-ID": custom_id}
-    )
+    response = await client.get("/api/health", headers={"X-Request-ID": custom_id})
     assert response.headers["X-Request-ID"] == custom_id

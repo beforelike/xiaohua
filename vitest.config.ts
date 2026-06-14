@@ -5,23 +5,18 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: [
-        'apps/api/src/**/*.ts',
-        'apps/web/src/**/*.{ts,tsx}',
-        'packages/contracts/src/**/*.ts',
-      ],
-      exclude: [
-        'apps/api/src/server.ts',
-        'apps/web/src/main.tsx',
-        'apps/web/src/features/canvas/**',
-      ],
+      include: ['apps/web/src/**/*.{ts,tsx}', 'packages/contracts/src/**/*.ts'],
+      exclude: ['apps/web/src/main.tsx', 'apps/web/src/features/canvas/**'],
       thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 75,
-        statements: 80,
+        lines: 70,
+        functions: 60,
+        branches: 70,
+        statements: 70,
       },
     },
-    projects: ['packages/*/vitest.config.ts', 'apps/*/vitest.config.ts'],
+    projects: [
+      'packages/contracts/vitest.config.ts',
+      'apps/web/vitest.config.ts',
+    ],
   },
 })

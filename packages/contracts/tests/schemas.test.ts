@@ -8,7 +8,7 @@ import {
 
 const timestamp = '2026-06-12T12:00:00.000Z'
 const generation = {
-  provider: 'stable-diffusion-webui' as const,
+  provider: 'fooocus' as const,
   mode: 'standard' as const,
   prompt: 'masterpiece, a red sun, isolated object',
   negativePrompt: 'low quality',

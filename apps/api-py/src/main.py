@@ -8,26 +8,35 @@ import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.config import get_settings
+from src.models.generation import GenerateAssetRequest
 from src.routers import asr, assets, commands, health, prompts
 from src.services.async_worker import get_task_queue, start_worker, stop_worker
+from src.services.image_generation import generate_asset
 
 
-def _placeholder_processor(task):  # type: ignore[no-untyped-def]
-    """占位任务处理器，将在 Task 4 替换为实际推理 pipeline"""
-    import time
-
-    for i in range(10):
-        if task.is_cancelled:
-            task.fail("任务已被用户取消")
-            return
-        task.push_progress((i + 1) * 10, f"处理中... {(i + 1) * 10}%")
-        time.sleep(0.1)
-    task.finish({"message": "生成完成（占位结果）"})
+def _generate_processor(task):  # type: ignore[no-untyped-def]
+    """Validate, generate, and persist one queued image asset."""
+    settings = get_settings()
+    request = GenerateAssetRequest.model_validate(task.request)
+    if task.is_cancelled:
+        task.fail("任务已被用户取消")
+        return
+    task.finish(generate_asset(request, settings, task))
 
 
 @asynccontextmanager
@@ -37,7 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"[启动] 笑画 API 服务 v0.1.0 | 端口: {settings.port}")
     print(f"[启动] 模型路径: {settings.model_base_path}")
     # 启动 Worker 线程
-    start_worker(_placeholder_processor)
+    start_worker(_generate_processor)
     print("[启动] Worker 线程已就绪")
     yield
     # 停止 Worker
@@ -120,6 +129,21 @@ def create_app() -> FastAPI:
             pass
         finally:
             await websocket.close()
+
+    web_dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+    if web_dist.exists():
+        assets_dir = web_dist / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="web-assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def serve_web(path: str) -> FileResponse:
+            if path.startswith(("api/", "ws/")):
+                raise HTTPException(status_code=404, detail="接口不存在")
+            candidate = (web_dist / path).resolve()
+            if path and candidate.is_relative_to(web_dist.resolve()) and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(web_dist / "index.html")
 
     return app
 

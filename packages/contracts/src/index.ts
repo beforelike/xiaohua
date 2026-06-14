@@ -12,7 +12,7 @@ export const canvasSettingsSchema = z.object({
 })
 
 export const generationMetadataSchema = z.object({
-  provider: z.enum(['gemini-image', 'stable-diffusion-webui', 'mock']),
+  provider: z.enum(['fooocus', 'mock']),
   mode: z
     .enum(['standard', 'scene', 'character-sheet', 'character-action'])
     .default('standard'),

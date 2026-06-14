@@ -3,11 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "apps/*",
+    "apps/web",
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n web,api -c cyan,yellow \"npm run dev --workspace @xiaohua/web\" \"npm run dev --workspace @xiaohua/api\"",
+    "dev": "concurrently -n web,api -c cyan,yellow \"npm run dev --workspace @xiaohua/web\" \"npm run dev:api\"",
+    "dev:api": "cd apps/api-py && python -m src.main",
+    "test:python": "cd apps/api-py && python -m pytest -q",
+    "lint:python": "cd apps/api-py && python -m ruff check src tests",
+    "format:python": "cd apps/api-py && python -m ruff format src tests",
+    "format:python:check": "cd apps/api-py && python -m ruff format --check src tests",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",

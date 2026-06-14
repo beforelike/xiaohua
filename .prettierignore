@@ -1,4 +1,6 @@
 node_modules
+apps/api
+apps/api-py
 dist
 coverage
 playwright-report
@@ -9,3 +11,4 @@ README.md
 CONTRIBUTING.md
 doc
 docs
+CLAUDE.md
