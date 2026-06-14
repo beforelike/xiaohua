@@ -26,6 +26,61 @@ interface CanvasLayerProps {
   ) => void
 }
 
+/**
+ * 生成中 / 生成失败 的占位骨架。
+ * 生成类指令一发出就立即渲染此骨架，让用户在扩散生成完成前就看到画面响应，
+ * 显著降低语音到画面的感知延迟；失败时保留骨架并提示可重说指令（优雅降级）。
+ */
+function PlaceholderShape({
+  layer,
+  onSelect,
+}: {
+  layer: Layer
+  onSelect: () => void
+}) {
+  const failed = layer.status === 'failed'
+  return (
+    <>
+      <Rect
+        x={layer.x}
+        y={layer.y}
+        width={layer.width}
+        height={layer.height}
+        cornerRadius={12}
+        fill={failed ? '#fdecea' : '#f4efe4'}
+        stroke={failed ? '#c0533c' : '#b9a884'}
+        strokeWidth={2}
+        dash={[10, 6]}
+        opacity={layer.opacity}
+        rotation={layer.rotation}
+        onClick={onSelect}
+        onTap={onSelect}
+      />
+      <Text
+        x={layer.x}
+        y={layer.y + layer.height / 2 - 30}
+        width={layer.width}
+        align="center"
+        text={layer.name}
+        fontSize={Math.max(14, Math.min(28, layer.width / 6))}
+        fontStyle="bold"
+        fill={failed ? '#8a2f1d' : '#6f6450'}
+        listening={false}
+      />
+      <Text
+        x={layer.x}
+        y={layer.y + layer.height / 2 + 6}
+        width={layer.width}
+        align="center"
+        text={failed ? '生成失败 · 可重说指令' : '生成中…'}
+        fontSize={Math.max(11, Math.min(18, layer.width / 9))}
+        fill={failed ? '#c0533c' : '#9a8f78'}
+        listening={false}
+      />
+    </>
+  )
+}
+
 function CanvasLayer({
   layer,
   selected,
@@ -95,6 +150,8 @@ function CanvasLayer({
             })
           }}
         />
+      ) : layer.status !== 'ready' ? (
+        <PlaceholderShape layer={layer} onSelect={onSelect} />
       ) : (
         <Image
           ref={imageRef}
@@ -134,7 +191,7 @@ function CanvasLayer({
           }}
         />
       )}
-      {selected && !layer.locked ? (
+      {selected && !layer.locked && layer.status === 'ready' ? (
         <Transformer
           ref={transformerRef}
           rotateEnabled

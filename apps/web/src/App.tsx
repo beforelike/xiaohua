@@ -206,6 +206,10 @@ function voiceCandidateIndex(text: string, candidates: Layer[]): number {
 function App() {
   const project = useProjectStore((state) => state.project)
   const addReadyLayer = useProjectStore((state) => state.addReadyLayer)
+  const addPlaceholderLayer = useProjectStore(
+    (state) => state.addPlaceholderLayer,
+  )
+  const markLayerFailed = useProjectStore((state) => state.markLayerFailed)
   const replaceLayerAsset = useProjectStore((state) => state.replaceLayerAsset)
   const addCharacterAsset = useProjectStore((state) => state.addCharacterAsset)
   const rememberIntent = useProjectStore((state) => state.rememberIntent)
@@ -361,15 +365,35 @@ function App() {
             return false
           }
         }
-        const totalObjects = command.objects.length
+        const objectList = command.objects as SceneObject[]
+        const totalObjects = objectList.length
         let completedObjects = 0
+        // 先为每个对象放置"生成中"占位骨架，让画面在扩散生成完成前就立即响应
+        const placedLayers = [...useProjectStore.getState().project.layers]
+        const placeholders = objectList.map((object) => {
+          const layout = planSceneObjectLayout(project, {
+            ...object,
+            avoidLayers: placedLayers,
+          })
+          const layer = addPlaceholderLayer({
+            name: object.name,
+            type: 'image',
+            source: 'generated',
+            ...(object.prompt ? { prompt: object.prompt } : {}),
+            ...(object.negativePrompt
+              ? { negativePrompt: object.negativePrompt }
+              : {}),
+            ...(object.prompt ? { semanticDescription: object.prompt } : {}),
+            ...layout,
+            createdBy: 'voice',
+          })
+          placedLayers.push(layer)
+          return layer
+        })
         setStatus(`正在生成 ${totalObjects} 个对象 (0/${totalObjects})…`)
-        const generated: Array<{
-          object: SceneObject
-          asset: GeneratedAsset
-          characterAssetId?: string
-        }> = []
-        for (const obj of command.objects as SceneObject[]) {
+        for (let i = 0; i < objectList.length; i++) {
+          const obj = objectList[i]!
+          const placeholder = placeholders[i]!
           try {
             let characterAsset = obj.isBackground
               ? undefined
@@ -408,13 +432,14 @@ function App() {
                 }),
               })
               if (!anchorResponse.ok) {
+                markLayerFailed(placeholder.id, `“${obj.name}”身份锚点生成失败`)
                 setStatus(
                   await readApiError(
                     anchorResponse,
-                    `建立“${obj.name}”身份锚点失败，作品未修改。`,
+                    `建立“${obj.name}”身份锚点失败，已跳过该对象。`,
                   ),
                 )
-                return false
+                continue
               }
               const anchorPayload = (await anchorResponse.json()) as {
                 asset: {
@@ -448,13 +473,14 @@ function App() {
                 }),
               })
               if (!turnaroundResponse.ok) {
+                markLayerFailed(placeholder.id, `“${obj.name}”三视图生成失败`)
                 setStatus(
                   await readApiError(
                     turnaroundResponse,
-                    `建立“${obj.name}”三视图失败，作品未修改。`,
+                    `建立“${obj.name}”三视图失败，已跳过该对象。`,
                   ),
                 )
-                return false
+                continue
               }
               const turnaroundPayload = (await turnaroundResponse.json()) as {
                 asset: {
@@ -500,51 +526,30 @@ function App() {
               }),
             })
             if (!response.ok) {
+              markLayerFailed(placeholder.id, `“${obj.name}”生成失败，可重说指令`)
               setStatus(
                 await readApiError(
                   response,
-                  `生成“${obj.name}”失败，作品未修改。`,
+                  `生成“${obj.name}”失败，已跳过该对象。`,
                 ),
               )
-              return false
+              continue
             }
             const payload = (await response.json()) as GeneratedAssetPayload
-            generated.push({
-              object: obj,
-              asset: payload.asset,
-              ...(characterAsset
-                ? { characterAssetId: characterAsset.id }
-                : {}),
+            // 用真实素材替换占位骨架（位置/尺寸沿用占位时的布局）
+            replaceLayerAsset(placeholder.id, {
+              assetUrl: payload.asset.url,
+              source: payload.asset.source,
+              generation: payload.asset.generation,
+              ...(characterAsset ? { characterAssetId: characterAsset.id } : {}),
             })
             completedObjects++
             setStatus(`已完成 ${completedObjects}/${totalObjects} 个对象…`)
           } catch {
-            setStatus(`生成“${obj.name}”时出错，作品未修改。`)
-            return false
+            markLayerFailed(placeholder.id, `“${obj.name}”生成时出错`)
+            setStatus(`生成“${obj.name}”时出错，已跳过该对象。`)
           }
         }
-        const placedLayers = [...useProjectStore.getState().project.layers]
-        const results = generated.map(({ object, asset, characterAssetId }) => {
-          const layout = planSceneObjectLayout(project, {
-            ...object,
-            avoidLayers: placedLayers,
-          })
-          const layer = addReadyLayer({
-            name: object.name,
-            type: 'image',
-            source: asset.source,
-            assetUrl: asset.url,
-            generation: asset.generation,
-            prompt: object.prompt,
-            negativePrompt: object.negativePrompt,
-            semanticDescription: object.prompt,
-            ...(characterAssetId ? { characterAssetId } : {}),
-            ...layout,
-            createdBy: 'voice',
-          })
-          placedLayers.push(layer)
-          return layer
-        })
         if (command.style && command.style !== project.globalStyle) {
           useProjectStore.getState().replaceProject(
             {
@@ -556,12 +561,11 @@ function App() {
           )
         }
         setStatus(
-          `已生成 ${String(results.length)} 个图层：${results.map((layer) => layer.name).join('、')}`,
+          completedObjects > 0
+            ? `已生成 ${completedObjects}/${totalObjects} 个对象`
+            : '没有可生成的对象，请换一种描述。',
         )
-        if (results.length === 0) {
-          setStatus('没有可生成的对象，请换一种描述。')
-        }
-        return results.length > 0
+        return completedObjects > 0
       }
 
       // 单对象创建流程（回退）
@@ -582,27 +586,6 @@ function App() {
         }
         relationTarget = resolution.layer
       }
-      setStatus('正在通过 WebUI 生成新素材…')
-      const response = await fetch('/api/assets/generate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          schemaVersion: 1,
-          commandId: command.id,
-          prompt: command.prompt ?? command.properties?.name ?? '童话元素',
-          style: command.style,
-          width: 512,
-          height: 512,
-          background: 'transparent',
-          sceneContext,
-          sceneImageDataUrl,
-        }),
-      })
-      if (!response.ok) {
-        setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
-        return false
-      }
-      const payload = (await response.json()) as GeneratedAssetPayload
       const layout = relationTarget
         ? planLayerRelativeToTarget(project, relationTarget, {
             position: command.properties?.position,
@@ -615,16 +598,17 @@ function App() {
             width: 320,
             height: 320,
           })
-      const layer = addReadyLayer({
-        name: command.properties?.name ?? '新元素',
+      const placeholderName = command.properties?.name ?? '新元素'
+      const placeholderSemantic = relationTarget
+        ? `${command.prompt ?? placeholderName}，位于${relationTarget.name}附近`
+        : (command.prompt ?? placeholderName)
+      // 先放置占位骨架，立即反馈；随后异步生成并替换
+      const placeholder = addPlaceholderLayer({
+        name: placeholderName,
         type: 'image',
-        source: payload.asset.source,
-        assetUrl: payload.asset.url,
-        generation: payload.asset.generation,
-        prompt: command.prompt,
-        semanticDescription: relationTarget
-          ? `${command.prompt ?? command.properties?.name ?? '新元素'}，位于${relationTarget.name}附近`
-          : command.prompt,
+        source: 'generated',
+        ...(command.prompt ? { prompt: command.prompt } : {}),
+        semanticDescription: placeholderSemantic,
         ...(relationTarget
           ? {
               relation: `${command.properties?.position ?? 'right'}-of:${relationTarget.name}`,
@@ -633,16 +617,41 @@ function App() {
         ...layout,
         createdBy: 'voice',
       })
-      if (command.properties?.position && !relationTarget) {
-        execute({
-          ...command,
-          action: 'modify',
-          target: { id: layer.id },
-          requiresGeneration: false,
+      setStatus('已放置占位骨架，正在生成新素材…')
+      try {
+        const response = await fetch('/api/assets/generate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            commandId: command.id,
+            prompt: command.prompt ?? command.properties?.name ?? '童话元素',
+            style: command.style,
+            width: 512,
+            height: 512,
+            background: 'transparent',
+            sceneContext,
+            sceneImageDataUrl,
+          }),
         })
+        if (!response.ok) {
+          markLayerFailed(placeholder.id, '素材生成失败，可重说指令')
+          setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
+          return false
+        }
+        const payload = (await response.json()) as GeneratedAssetPayload
+        replaceLayerAsset(placeholder.id, {
+          assetUrl: payload.asset.url,
+          source: payload.asset.source,
+          generation: payload.asset.generation,
+        })
+        setStatus('新素材已经加入画布')
+        return true
+      } catch {
+        markLayerFailed(placeholder.id, '素材生成失败，可重说指令')
+        setStatus('素材生成时出错，请稍后重试。')
+        return false
       }
-      setStatus('新素材已经加入画布')
-      return true
     }
     if (command.action === 'modify' && command.requiresGeneration) {
       const resolution = resolveTarget(project, command.target)

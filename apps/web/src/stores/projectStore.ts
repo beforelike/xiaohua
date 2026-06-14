@@ -26,6 +26,14 @@ export interface ProjectStore {
   undo: () => boolean
   redo: () => boolean
   addReadyLayer: (input: NewLayer) => Layer
+  /**
+   * 立即在画布上放置一个"生成中"占位骨架图层。
+   * 生成类指令应先调用此方法即时反馈，再异步生成并通过 replaceLayerAsset 替换为成品，
+   * 从而把感知延迟降到最低（语音话音刚落画面即响应）。
+   */
+  addPlaceholderLayer: (input: NewLayer) => Layer
+  /** 将占位图层标记为生成失败（优雅降级：保留骨架并提示用户可重说指令）。 */
+  markLayerFailed: (id: string, message?: string) => boolean
   replaceLayerAsset: (
     id: string,
     asset: Pick<Layer, 'assetUrl' | 'source'> & {
@@ -33,6 +41,7 @@ export interface ProjectStore {
       negativePrompt?: string
       semanticDescription?: string
       generation?: Layer['generation']
+      characterAssetId?: string
     },
   ) => boolean
   rememberIntent: (input: {
@@ -107,6 +116,47 @@ export function createProjectStore(
       )
       return layer
     },
+    addPlaceholderLayer: (input) => {
+      const state = get()
+      const current = state.project
+      const layer = createLayer(
+        current,
+        {
+          ...input,
+          status: 'generating',
+          semanticDescription:
+            input.semanticDescription ?? `${input.name}（生成中）`,
+        },
+        factory,
+      )
+      // 占位骨架是临时状态，暂不刷新场景记忆，待 replaceLayerAsset 成稿后再纳入。
+      set(withHistory(state, addLayer(current, layer, now())))
+      return layer
+    },
+    markLayerFailed: (id, message) => {
+      const state = get()
+      const current = state.project
+      const target = current.layers.find((layer) => layer.id === id)
+      if (!target) return false
+      set({
+        project: {
+          ...current,
+          layers: current.layers.map((layer) =>
+            layer.id === id
+              ? {
+                  ...layer,
+                  status: 'failed',
+                  ...(message ? { semanticDescription: message } : {}),
+                  updatedAt: now(),
+                }
+              : layer,
+          ),
+          updatedAt: now(),
+        },
+        lastResult: null,
+      })
+      return true
+    },
     replaceLayerAsset: (id, asset) => {
       const state = get()
       const current = state.project
@@ -133,6 +183,9 @@ export function createProjectStore(
                       : {}),
                     ...(asset.generation
                       ? { generation: asset.generation }
+                      : {}),
+                    ...(asset.characterAssetId
+                      ? { characterAssetId: asset.characterAssetId }
                       : {}),
                     updatedAt: now(),
                   }

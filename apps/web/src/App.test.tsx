@@ -1106,9 +1106,13 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '执行' }))
 
     expect(
-      await screen.findByText('操作失败，作品已保留，请稍后重试。'),
+      await screen.findByText('素材生成时出错，请稍后重试。'),
     ).toBeInTheDocument()
-    expect(useProjectStore.getState().project.layers).toHaveLength(0)
+    // 占位骨架保留并标记为失败，便于用户重说指令（优雅降级），而非整段消失
+    const failedLayers = useProjectStore.getState().project.layers
+    expect(failedLayers).toHaveLength(1)
+    expect(failedLayers[0]?.status).toBe('failed')
+    // 失败的临时占位不应污染创作记忆
     expect(useProjectStore.getState().project.memory).toMatchObject({
       creativeDirection: '',
       sceneSummary: '',

@@ -44,6 +44,81 @@ describe('projectStore', () => {
     expect(state.project.layers[0]?.generation).toEqual(generation)
   })
 
+  it('adds a generating placeholder layer immediately', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => 'cat', now: () => second },
+    )
+
+    const layer = store.getState().addPlaceholderLayer({
+      name: '猫',
+      type: 'image',
+      source: 'generated',
+      prompt: 'a cute cat',
+      width: 320,
+      height: 320,
+      createdBy: 'voice',
+    })
+
+    const state = store.getState()
+    expect(layer.status).toBe('generating')
+    expect(state.project.layers).toHaveLength(1)
+    expect(state.project.selectedLayerId).toBe('cat')
+    expect(state.project.layers[0]?.semanticDescription).toBe('猫（生成中）')
+  })
+
+  it('finalizes a placeholder by replacing its asset and marking it ready', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => 'cat', now: () => second },
+    )
+    store.getState().addPlaceholderLayer({
+      name: '猫',
+      type: 'image',
+      source: 'generated',
+      width: 320,
+      height: 320,
+      createdBy: 'voice',
+    })
+
+    expect(
+      store.getState().replaceLayerAsset('cat', {
+        assetUrl: '/api/assets/cat.png',
+        source: 'generated',
+        generation,
+      }),
+    ).toBe(true)
+    expect(store.getState().project.layers[0]).toMatchObject({
+      status: 'ready',
+      assetUrl: '/api/assets/cat.png',
+    })
+  })
+
+  it('marks a placeholder failed for graceful degradation', () => {
+    const store = createProjectStore(
+      createProject('测试', { id: () => 'project', now: () => first }),
+      { id: () => 'cat', now: () => second },
+    )
+    store.getState().addPlaceholderLayer({
+      name: '猫',
+      type: 'image',
+      source: 'generated',
+      width: 320,
+      height: 320,
+      createdBy: 'voice',
+    })
+
+    expect(
+      store.getState().markLayerFailed('cat', '生成失败，请重说指令'),
+    ).toBe(true)
+    expect(store.getState().project.layers[0]).toMatchObject({
+      status: 'failed',
+      semanticDescription: '生成失败，请重说指令',
+    })
+    // 标记不存在的图层返回 false
+    expect(store.getState().markLayerFailed('missing')).toBe(false)
+  })
+
   it('does not commit a failed command', () => {
     const store = createProjectStore(
       createProject('测试', { id: () => 'project', now: () => first }),
