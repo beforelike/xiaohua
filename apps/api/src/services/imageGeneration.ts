@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
-import { composeNegativePrompt, composePositivePrompt } from './promptComposer'
+import {
+  composeNegativePrompt,
+  composePositivePrompt,
+  requestedSubjectCount,
+} from './promptComposer'
 import { findPreset } from './promptPresets'
 
 interface StableDiffusionResponse {
@@ -28,6 +32,13 @@ const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
 const ACTION_AUDIT_PATTERN =
   /\b(?:run(?:ning)?|gallop(?:ing)?|fly(?:ing)?|jump(?:ing)?|drink(?:ing)?|swim(?:ming)?|sit(?:ting)?|stand(?:ing)?|crouch(?:ing)?|lie|lying|look(?:ing)?|gaze|gazing|head|muzzle|kneel(?:ing)?|dance|dancing|wave|waving|turn(?:ing)?)\b|奔跑|飞翔|跳跃|喝水|游泳|坐|站|蹲|躺|低头|抬头|仰望|凝视|回头|转身|挥手|舞蹈/i
+
+export function expectedSubjectCount(request: GenerateAssetRequest) {
+  return Math.max(
+    requestedSubjectCount(request.prompt),
+    requestedSubjectCount(request.identityConstraints ?? ''),
+  )
+}
 
 function animalSpeciesConstraint(prompt: string) {
   if (/\b(?:cat|cats|kitten|kittens)\b|猫/i.test(prompt)) {
@@ -298,6 +309,7 @@ export async function removeForegroundWithOpenCv(
     referencePath?: string
     preserveColors?: boolean
     preservePose?: boolean
+    expectedSubjects?: number
   } = {},
 ): Promise<Buffer | null> {
   if (process.env.NODE_ENV === 'test' && !process.env.IMAGE_PROCESSOR_PYTHON) {
@@ -311,6 +323,8 @@ export async function removeForegroundWithOpenCv(
       process.env.IMAGE_PROCESSOR_PYTHON ?? 'python',
       [
         script,
+        '--expected-subjects',
+        String(options.expectedSubjects ?? 1),
         ...(options.referencePath &&
         (options.preserveColors || options.preservePose)
           ? [
@@ -450,9 +464,14 @@ async function generateWithGemini(
 ) {
   if (!config.GEMINI_IMAGE_API_KEY) throw new Error('GEMINI_NOT_CONFIGURED')
   const apiKey = config.GEMINI_IMAGE_API_KEY
+  const expectedSubjects = expectedSubjectCount(request)
+  const subjectDescription =
+    expectedSubjects === 1
+      ? 'the requested foreground subject'
+      : `the requested group of exactly ${String(expectedSubjects)} foreground subjects`
   const foregroundInstructions =
     request.background === 'transparent'
-      ? 'Render only the requested foreground subject as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.'
+      ? `Render only ${subjectDescription} as a finished full-color production asset with solid clean fills, fully visible and centered on a pure uniform white studio background. Do not add a frame, circle, oval, panel, badge, decoration, ground, scenery, sketch lines, construction lines, motion lines, monochrome ink drafts, or text.`
       : 'Render only the requested edge-to-edge environmental background plate. Keep intentional open space for the existing foreground layers, and do not reproduce any existing character, object, title, frame, border, text, or watermark.'
   const prompt = [
     'You are the visual director for an editable layered artwork.',
@@ -466,7 +485,7 @@ async function generateWithGemini(
       ? 'The first reference image is the existing version of this same layer. Preserve every identity and design feature not explicitly changed by the request.'
       : undefined,
     request.referenceAssetId && request.preservePose
-      ? 'This is a minimal edit, not a redesign. Preserve the exact single-subject composition, pose, silhouette, scale, face, markings, and camera angle; change only the explicitly requested detail.'
+      ? 'This is a minimal edit, not a redesign. Preserve the exact subject composition, count, pose, silhouette, scale, faces, markings, and camera angle; change only the explicitly requested detail.'
       : undefined,
     request.referenceAssetId && request.preservePose === false
       ? 'Use the reference image only for immutable identity, anatomy, face, body proportions, markings, materials, and colors. The old pose and old head direction are forbidden. Repose the same subject so the newly requested action is literal, unmistakable, and visibly different; every limb, head angle, gaze, and body orientation must support the new action.'
@@ -475,7 +494,7 @@ async function generateWithGemini(
       ? `Immutable identity constraints: ${request.identityConstraints}. These are hard requirements, not suggestions.`
       : undefined,
     request.referenceAssetId
-      ? 'Do not redesign, age, recolor, change species, change body type, or replace the referenced subject. Keep the same recognizable individual.'
+      ? 'Do not redesign, age, recolor, change species, change body type, add, remove, or replace referenced subjects. Keep the same recognizable individual or group.'
       : undefined,
     request.sceneImageDataUrl
       ? 'The final reference image is the current full canvas. Match its camera, perspective, palette, lighting, rendering language, and available spatial role. Do not copy other objects into this isolated layer.'
@@ -484,7 +503,7 @@ async function generateWithGemini(
       ? `Strictly avoid: ${request.negativePrompt}.`
       : undefined,
     request.background === 'transparent'
-      ? 'Show exactly one depiction of the requested subject. Never repeat it. No alternate pose, second view, turnaround, character sheet, contact sheet, grid, collage, inset, comparison, or duplicated body.'
+      ? `Show exactly ${String(expectedSubjects)} requested ${expectedSubjects === 1 ? 'subject' : 'subjects'} and no extra depictions. No alternate pose, second view, turnaround, character sheet, contact sheet, grid, collage, inset, comparison, or duplicated body.`
       : undefined,
     'Return one polished production-ready image, not a draft, concept sheet, comparison, collage, frame, badge, or annotated design.',
   ]
@@ -571,7 +590,10 @@ async function validateVisualSemantics(
   cacheDirectory: string,
 ) {
   const actionRequired = ACTION_AUDIT_PATTERN.test(request.prompt)
-  const identityRequired = Boolean(request.referenceAssetId)
+  const identityRequired = Boolean(
+    request.referenceAssetId && request.identityConstraints?.trim(),
+  )
+  const expectedSubjects = expectedSubjectCount(request)
   if (
     request.background !== 'transparent' ||
     (!actionRequired && !identityRequired) ||
@@ -607,11 +629,12 @@ async function validateVisualSemantics(
     identityRequired && images.length > 1
       ? 'The first image is the original identity reference. The final image is the candidate.'
       : 'The final image is the candidate.',
-    'For a transparent foreground asset there must be exactly one requested subject. Count miniature copies, secondary depictions, extra bodies, insets, and alternate poses as additional subjects.',
+    'Judge matchesRequestedSubject only by whether the primary isolated layer subject has the requested core type or species. Do not set it false because an interaction target, prop, scenery element, effect, or background mentioned in the request is absent; those belong on separate layers. Do not use pose or identity differences for this field because they have separate fields.',
+    `For this transparent foreground asset there must be exactly ${String(expectedSubjects)} requested ${expectedSubjects === 1 ? 'subject' : 'subjects'}. Count miniature copies, secondary depictions, extra bodies, insets, and alternate poses as additional subjects.`,
     actionRequired
       ? 'The requested pose, head direction, gaze, limb action, and body orientation must be literal and unmistakably visible. A vague, neutral, or contradictory pose fails.'
       : undefined,
-    'Return strict JSON only: {"subjectCount":1,"matchesRequestedSubject":true,"actionClearlyVisible":true,"identityPreserved":true,"issues":[""]}.',
+    `Return strict JSON only: {"subjectCount":${String(expectedSubjects)},"matchesRequestedSubject":true,"actionClearlyVisible":true,"identityPreserved":true,"issues":[""]}.`,
   ]
     .filter(Boolean)
     .join('\n')
@@ -649,10 +672,10 @@ async function validateVisualSemantics(
     const payload = (await response.json()) as GeminiImageResponse
     const result = jsonObjectFromText(payload.choices?.[0]?.message?.content)
     if (!result) return
-    if (result.subjectCount !== 1) {
+    if (result.subjectCount !== expectedSubjects) {
       throw new Error(`SEMANTIC_SUBJECT_COUNT:${String(result.subjectCount)}`)
     }
-    if (result.matchesRequestedSubject === false) {
+    if (!request.referenceAssetId && result.matchesRequestedSubject === false) {
       throw new Error('SEMANTIC_SUBJECT_MISMATCH')
     }
     if (actionRequired && result.actionClearlyVisible === false) {
@@ -835,6 +858,7 @@ export async function generateAsset(
         const semanticCutout =
           request.background === 'transparent'
             ? await removeForegroundWithOpenCv(normalized, {
+                expectedSubjects: expectedSubjectCount(request),
                 ...(request.referenceAssetId &&
                 (request.preserveColors || request.preservePose)
                   ? {
@@ -991,6 +1015,7 @@ export async function generateAsset(
         const semanticCutout =
           request.background === 'transparent'
             ? await removeForegroundWithOpenCv(generated, {
+                expectedSubjects: expectedSubjectCount(request),
                 ...(request.referenceAssetId &&
                 (request.preserveColors || request.preservePose)
                   ? {

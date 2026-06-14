@@ -3,9 +3,32 @@ import { findPreset, promptPresets } from '../src/services/promptPresets'
 import {
   buildNegativePrompt,
   buildPrompt,
+  expectedSubjectCount,
 } from '../src/services/imageGeneration'
+import { requestedSubjectCount } from '../src/services/promptComposer'
 
 describe('promptPresets', () => {
+  it('detects requested subject counts in English and Chinese prompts', () => {
+    expect(requestedSubjectCount('exactly two horses drinking')).toBe(2)
+    expect(requestedSubjectCount('两匹马低头喝水')).toBe(2)
+    expect(requestedSubjectCount('three birds flying')).toBe(3)
+    expect(requestedSubjectCount('a horse running')).toBe(1)
+  })
+
+  it('inherits subject count from edit identity constraints', () => {
+    expect(
+      expectedSubjectCount({
+        schemaVersion: 1,
+        commandId: 'edit-horses',
+        prompt: 'lower their heads to drink',
+        identityConstraints: 'preserve exactly two horses',
+        width: 512,
+        height: 512,
+        background: 'transparent',
+      }),
+    ).toBe(2)
+  })
+
   describe('findPreset', () => {
     it('精确匹配关键词', () => {
       const result = findPreset('太阳')

@@ -424,6 +424,10 @@ export async function enhanceSinglePrompt(
     throw new Error('LLM_NOT_CONFIGURED')
   }
 
+  const subjectCardinality =
+    (requestedSubjectCount(`${previousPrompt} ${objectName}`) ?? 1) > 1
+      ? 'subject group'
+      : 'single subject'
   const singlePromptSystemMessage = `你是一个专业的 Stable Diffusion 提示词工程师。
 根据用户的描述，为已有对象生成“修改后的完整对象定义”，不是只翻译用户命令。
 
@@ -434,7 +438,7 @@ export async function enhanceSinglePrompt(
 - 结合当前完整画面的对象关系、光线方向、视角、色彩和叙事，让修改后的对象自然融入作品
 - 必须忠实保留用户描述中的动作、姿态、朝向和数量，不得改成静态或其他动作
 - 不要重复全局画风，也不要添加 masterpiece、best quality 等通用质量词；系统会统一组合
-- ${background === 'transparent' ? '这是前景对象，提示词必须包含：entire object fully visible, full body in frame, generous empty margin, isolated object, solid white background, no background, single subject' : '这是背景/场景层，生成完整的场景描述'}
+- ${background === 'transparent' ? `这是前景对象，提示词必须包含：entire object fully visible, full body in frame, generous empty margin, isolated object, solid white background, no background, ${subjectCardinality}` : '这是背景/场景层，生成完整的场景描述'}
 - 生成合适的英文负向提示词
 - 内容细节需与全局画风协调，但不要复制全局画风文本
 

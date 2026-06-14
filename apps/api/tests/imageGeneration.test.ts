@@ -30,7 +30,7 @@ async function createConfig(
     LLM_ENHANCE_PROMPT: false,
     IMAGE_PROVIDER: imageProvider,
     GEMINI_IMAGE_BASE_URL: 'http://127.0.0.1:8045/v1',
-    GEMINI_IMAGE_MODEL: 'gemini-3-pro-image',
+    GEMINI_IMAGE_MODEL: 'gemini-3.1-flash-image',
     GEMINI_VISION_MODEL: 'gemini-3-flash',
     SD_WEBUI_BASE_URL: 'http://127.0.0.1:7860',
     SD_STEPS: 28,
@@ -235,7 +235,7 @@ describe('imageGeneration', () => {
       size: string
       messages: Array<{ content: string }>
     }
-    expect(body.model).toBe('gemini-3-pro-image')
+    expect(body.model).toBe('gemini-3.1-flash-image')
     expect(body.size).toBe('1024x1024')
     expect(body.messages[0]?.content).toContain(
       'edge-to-edge environmental background plate',
@@ -313,6 +313,80 @@ describe('imageGeneration', () => {
     expect(auditBody.model).toBe('gemini-3-flash')
     expect(auditBody.messages[0]?.content[0]?.text).toContain(
       'literal and unmistakably visible',
+    )
+  })
+
+  it('does not reject an edited layer when an optional interaction target is absent', async () => {
+    const config = {
+      ...(await createConfig()),
+      IMAGE_PROVIDER: 'gemini-image' as const,
+      GEMINI_IMAGE_API_KEY: 'local-test-key',
+    }
+    const png = await coloredSubjectPng()
+    await writeFile(
+      path.join(config.ASSET_CACHE_DIR, 'a'.repeat(24) + '.png'),
+      png,
+    )
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: `data:image/png;base64,${png.toString('base64')}`,
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    subjectCount: 1,
+                    matchesRequestedSubject: false,
+                    actionClearlyVisible: true,
+                    identityPreserved: false,
+                    issues: ['butterfly is missing'],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'edited-cat-with-optional-target',
+        prompt: 'a cat jumping toward a butterfly',
+        referenceAssetId: 'a'.repeat(24),
+        preserveColors: false,
+        preservePose: false,
+      },
+      config,
+      fetcher,
+    )
+
+    expect(asset.source).toBe('generated')
+    const auditBody = JSON.parse(
+      fetcher.mock.calls[1]?.[1]?.body as string,
+    ) as {
+      messages: Array<{
+        content: Array<{ type: string; text?: string }>
+      }>
+    }
+    expect(auditBody.messages[0]?.content[0]?.text).toContain(
+      'interaction target',
     )
   })
 

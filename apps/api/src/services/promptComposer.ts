@@ -79,9 +79,33 @@ const FOREGROUND_NEGATIVE_TAGS = [
   'cast shadow',
 ]
 
+const SUBJECT_COUNT_WORDS: Array<[RegExp, number]> = [
+  [/\b(?:two|pair of)\b|两|二/, 2],
+  [/\bthree\b|三/, 3],
+  [/\bfour\b|四/, 4],
+  [/\bfive\b|五/, 5],
+  [/\bsix\b|六/, 6],
+  [/\bseven\b|七/, 7],
+  [/\beight\b|八/, 8],
+  [/\bnine\b|九/, 9],
+  [/\bten\b|十/, 10],
+]
+
+export function requestedSubjectCount(prompt: string) {
+  const numeric = prompt.match(
+    /\b(?:exactly\s+)?([2-9]|10)\s+(?:subjects?|characters?|people|persons?|animals?|horses?|dogs?|cats?|birds?)\b/i,
+  )
+  if (numeric?.[1]) return Number(numeric[1])
+  for (const [pattern, count] of SUBJECT_COUNT_WORDS) {
+    if (pattern.test(prompt)) return count
+  }
+  return 1
+}
+
 function isMultiSubjectPrompt(prompt: string) {
-  return /\b(?:two|three|four|five|six|seven|eight|nine|ten|pair of|group of|multiple)\b/i.test(
-    prompt,
+  return (
+    requestedSubjectCount(prompt) > 1 ||
+    /\b(?:group of|multiple)\b/i.test(prompt)
   )
 }
 
