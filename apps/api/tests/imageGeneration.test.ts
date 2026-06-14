@@ -183,8 +183,45 @@ describe('imageGeneration', () => {
       steps: config.SD_STEPS,
       cfgScale: config.SD_CFG_SCALE,
       sampler: config.SD_SAMPLER,
-      pipelineVersion: 13,
+      pipelineVersion: 14,
     })
+  })
+
+  it('adds scene composition constraints to WebUI scene tasks', async () => {
+    const config = await createConfig()
+    const png = await coloredSubjectPng()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+        status: 200,
+      }),
+    )
+
+    const asset = await generateAsset(
+      {
+        ...request,
+        commandId: 'cohesive-webui-scene',
+        prompt: 'a cat chases a mouse through a kitchen',
+        background: 'opaque',
+        generationMode: 'scene',
+      },
+      config,
+      fetcher,
+    )
+
+    const requestBody = fetcher.mock.calls[0]?.[1]?.body
+    expect(typeof requestBody).toBe('string')
+    const body = JSON.parse(requestBody as string) as {
+      prompt: string
+      negative_prompt: string
+    }
+    expect(body.prompt).toContain('one complete cohesive scene')
+    expect(body.prompt).toContain('single camera perspective')
+    expect(body.prompt).toContain('subjects interact naturally')
+    expect(body.prompt).not.toContain('isolated object')
+    expect(body.negative_prompt).toContain('isolated asset')
+    expect(body.negative_prompt).toContain('empty background plate')
+    expect(asset.generation?.mode).toBe('scene')
+    expect(asset.generation?.prompt).toBe(body.prompt)
   })
 
   it('separates cache entries by image provider', async () => {

@@ -6,7 +6,7 @@ import type { AppConfig } from '../config'
 import { composeNegativePrompt, composePositivePrompt } from './promptComposer'
 import { findPreset } from './promptPresets'
 
-export const PROMPT_PIPELINE_VERSION = 13
+export const PROMPT_PIPELINE_VERSION = 14
 
 export function seedFromAssetId(id: string) {
   return Number.parseInt(id.slice(0, 8), 16)
@@ -17,6 +17,7 @@ export function buildPrompt(
   background: 'transparent' | 'opaque',
   style?: string,
   isEnhanced = false,
+  mode?: GenerateAssetRequest['generationMode'],
 ): string {
   const preset = isEnhanced ? null : findPreset(userPrompt)
   return composePositivePrompt({
@@ -24,6 +25,7 @@ export function buildPrompt(
     style,
     background,
     enhanced: isEnhanced,
+    mode,
   })
 }
 
@@ -31,6 +33,7 @@ export function buildNegativePrompt(
   userPrompt: string,
   customNegative?: string,
   background: 'transparent' | 'opaque' = 'opaque',
+  mode?: GenerateAssetRequest['generationMode'],
 ): string {
   const preset = findPreset(userPrompt)
   return composeNegativePrompt({
@@ -38,6 +41,7 @@ export function buildNegativePrompt(
     customNegative,
     presetNegative: preset?.negativeExtra,
     background,
+    mode,
   })
 }
 
@@ -79,11 +83,13 @@ export function buildStableDiffusionTask(input: {
     input.request.background,
     input.request.style ?? input.config.SD_STYLE_PROMPT,
     isEnhanced,
+    input.request.generationMode,
   )
   const negativePrompt = buildNegativePrompt(
     input.request.prompt,
     input.customNegative,
     input.request.background,
+    input.request.generationMode,
   )
   const metadata = buildGenerationMetadata({
     request: input.request,

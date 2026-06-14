@@ -17,7 +17,7 @@ const generation = {
   steps: 28,
   cfgScale: 7,
   sampler: 'DPM++ 2M Karras',
-  pipelineVersion: 13,
+  pipelineVersion: 14,
 }
 
 describe('projectStore', () => {

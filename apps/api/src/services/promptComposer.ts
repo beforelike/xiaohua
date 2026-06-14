@@ -1,83 +1,5 @@
-const QUALITY_TAGS = [
-  'masterpiece',
-  'best quality',
-  'highly detailed',
-  'sharp focus',
-  'professional',
-]
-
-const COMMON_NEGATIVE_TAGS = [
-  'worst quality',
-  'low quality',
-  'lowres',
-  'blurry',
-  'out of focus',
-  'jpeg artifacts',
-  'oversaturated',
-  'undersaturated',
-  'overexposed',
-  'underexposed',
-  'text',
-  'letters',
-  'logo',
-  'signature',
-  'watermark',
-  'username',
-  'duplicate',
-  'glitch',
-]
-
-const FOREGROUND_POSITIVE_TAGS = [
-  'isolated object',
-  'centered composition',
-  'entire object fully visible',
-  'full body in frame',
-  'wide shot',
-  'generous empty margin on all sides',
-  'nothing cut off',
-  'solid white background',
-  'uniform white background',
-  'flat even lighting',
-  'minimal cast shadow',
-  'no scenery',
-  'no background clutter',
-  'no environmental elements',
-]
-
-const FOREGROUND_NEGATIVE_TAGS = [
-  'complex background',
-  'busy background',
-  'cropped subject',
-  'partial body',
-  'close-up',
-  'extreme close-up',
-  'truncated',
-  'out of frame',
-  'cut off',
-  'deformed',
-  'malformed',
-  'extra limbs',
-  'missing limbs',
-  'bad proportions',
-  'river',
-  'water',
-  'stream',
-  'lake',
-  'pond',
-  'shoreline',
-  'riverbank',
-  'reflection',
-  'forest',
-  'trees',
-  'landscape',
-  'scenery',
-  'ground plane',
-  'environment',
-  'gradient background',
-  'dark background',
-  'colored background',
-  'cast shadow',
-]
+import type { GenerationMode } from './generationProfiles'
+import { generationProfileFor } from './generationProfiles'
 
 const SUBJECT_COUNT_WORDS: Array<[RegExp, number]> = [
   [/\b(?:two|pair of)\b|两|二/, 2],
@@ -118,7 +40,9 @@ function splitPrompt(value: string): string[] {
     .filter(Boolean)
 }
 
-export function joinPromptTags(...values: Array<string | string[] | undefined>) {
+export function joinPromptTags(
+  ...values: Array<string | string[] | undefined>
+) {
   const tags = values.flatMap((value) =>
     value === undefined
       ? []
@@ -142,21 +66,22 @@ export function composePositivePrompt(input: {
   style?: string | undefined
   background: 'transparent' | 'opaque'
   enhanced: boolean
+  mode?: GenerationMode | undefined
 }) {
   const corePrompt = input.prompt.trim()
   const styledPrompt = input.style?.includes('{prompt}')
     ? input.style.replaceAll('{prompt}', corePrompt)
     : joinPromptTags(input.style, corePrompt)
-  const subjectCardinality = isMultiSubjectPrompt(corePrompt)
-    ? 'isolated subject group'
-    : 'single subject'
+  const profile = generationProfileFor({
+    mode: input.mode,
+    background: input.background,
+    multiSubject: isMultiSubjectPrompt(corePrompt),
+  })
 
   return joinPromptTags(
-    input.enhanced ? undefined : QUALITY_TAGS,
+    input.enhanced ? undefined : profile.qualityTags,
     styledPrompt,
-    input.background === 'transparent'
-      ? [...FOREGROUND_POSITIVE_TAGS, subjectCardinality]
-      : undefined,
+    profile.positiveTags,
   )
 }
 
@@ -165,17 +90,17 @@ export function composeNegativePrompt(input: {
   customNegative?: string | undefined
   presetNegative?: string | undefined
   background: 'transparent' | 'opaque'
+  mode?: GenerationMode | undefined
 }) {
+  const profile = generationProfileFor({
+    mode: input.mode,
+    background: input.background,
+    multiSubject: isMultiSubjectPrompt(input.prompt ?? ''),
+  })
+
   return joinPromptTags(
-    COMMON_NEGATIVE_TAGS,
-    input.background === 'transparent'
-      ? [
-          ...FOREGROUND_NEGATIVE_TAGS,
-          ...(isMultiSubjectPrompt(input.prompt ?? '')
-            ? []
-            : ['multiple subjects']),
-        ]
-      : undefined,
+    profile.commonNegativeTags,
+    profile.negativeTags,
     input.presetNegative,
     input.customNegative,
   )
