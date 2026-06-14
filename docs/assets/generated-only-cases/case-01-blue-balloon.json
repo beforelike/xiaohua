@@ -1,0 +1,20 @@
+{
+  "caseId": "case-01-blue-balloon",
+  "prompt": "画一个蓝色气球",
+  "feedback": "已生成 1/1 个对象",
+  "voice": "持续语音控制已启动，请直接说出绘图指令。",
+  "canvasMeta": [
+    "1024 × 768",
+    "1 个图层"
+  ],
+  "layerPanel": "图层1蓝色气球AI 生成◉开⧉↑×",
+  "memory": "作品记忆AI MEMORY画面理解主体：蓝色气球位于画面中央，内容：a single blue latex balloon, spherical, glossy surface, shiny, tied with a thin string hanging down, entire object fully visible, full body in frame, generous e。当前视觉焦点是蓝色气球创作方向写实摄影风格，柔光工作室灯光，突出蓝色气球的材质和光泽，简洁构图，无背景干扰。柔和均匀光线蓝色近期意图画一个蓝色气球",
+  "inputValue": "",
+  "capturedAt": "2026-06-14T11:54:05.496Z",
+  "status": "passed",
+  "usedPresetMaterial": false,
+  "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-01-blue-balloon-started.png",
+  "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-01-blue-balloon-result.png",
+  "consoleErrors": [],
+  "retryOf": "case-01-blue-balloon-first-attempt"
+}

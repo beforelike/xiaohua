@@ -1,0 +1,21 @@
+{
+  "caseId": "case-01-blue-balloon",
+  "prompt": "画一个蓝色气球",
+  "feedback": "提示词增强服务超时或不可用，请稍后重试",
+  "voice": "持续语音控制已启动，请直接说出绘图指令。",
+  "canvasMeta": [
+    "1024 × 768",
+    "0 个图层"
+  ],
+  "layerPanel": "图层0",
+  "memory": "作品记忆AI MEMORY画面理解还没有形成画面记忆，添加元素后会自动归纳。创作方向等待用户确定作品方向光线未定色彩未定",
+  "inputValue": "画一个蓝色气球",
+  "capturedAt": "2026-06-14T11:50:40.811Z",
+  "status": "failed-or-timeout",
+  "usedPresetMaterial": false,
+  "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-01-blue-balloon-started.png",
+  "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-01-blue-balloon-result.png",
+  "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ]
+}

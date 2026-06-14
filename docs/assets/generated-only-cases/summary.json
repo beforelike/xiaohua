@@ -1,0 +1,101 @@
+{
+  "generatedAt": "2026-06-14T11:54:05.851840+00:00",
+  "results": [
+    {
+      "caseId": "case-01-blue-balloon",
+      "prompt": "画一个蓝色气球",
+      "feedback": "已生成 1/1 个对象",
+      "voice": "持续语音控制已启动，请直接说出绘图指令。",
+      "canvasMeta": [
+        "1024 × 768",
+        "1 个图层"
+      ],
+      "layerPanel": "图层1蓝色气球AI 生成◉开⧉↑×",
+      "memory": "作品记忆AI MEMORY画面理解主体：蓝色气球位于画面中央，内容：a single blue latex balloon, spherical, glossy surface, shiny, tied with a thin string hanging down, entire object fully visible, full body in frame, generous e。当前视觉焦点是蓝色气球创作方向写实摄影风格，柔光工作室灯光，突出蓝色气球的材质和光泽，简洁构图，无背景干扰。柔和均匀光线蓝色近期意图画一个蓝色气球",
+      "inputValue": "",
+      "capturedAt": "2026-06-14T11:54:05.496Z",
+      "status": "passed",
+      "usedPresetMaterial": false,
+      "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-01-blue-balloon-started.png",
+      "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-01-blue-balloon-result.png",
+      "consoleErrors": [],
+      "retryOf": "case-01-blue-balloon-first-attempt"
+    },
+    {
+      "caseId": "case-02-pink-cloud",
+      "prompt": "画一朵粉色云",
+      "feedback": "已生成 1/1 个对象",
+      "voice": "持续语音控制已启动，请直接说出绘图指令。",
+      "canvasMeta": [
+        "1024 × 768",
+        "1 个图层"
+      ],
+      "layerPanel": "图层1粉色云朵AI 生成◉开⧉↑×",
+      "memory": "作品记忆AI MEMORY画面理解主体：粉色云朵位于画面中央，内容：soft cotton candy texture, gentle pastel pink color, rounded and billowing shape, floating gracefully, full object in frame, generous empty margin, isolated obj。当前视觉焦点是粉色云朵创作方向以柔和的粉色调云朵作为主体，营造梦幻、轻盈、治愈的氛围。使用柔光与渐变，突出云朵的蓬松感和立体感，背景留白以增强视觉焦点。柔和均匀光线粉色近期意图画一朵粉色云",
+      "inputValue": "",
+      "capturedAt": "2026-06-14T11:51:11.565Z",
+      "status": "passed",
+      "usedPresetMaterial": false,
+      "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-02-pink-cloud-started.png",
+      "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-02-pink-cloud-result.png",
+      "consoleErrors": []
+    },
+    {
+      "caseId": "case-03-red-kite",
+      "prompt": "画一个红色风筝",
+      "feedback": "已生成 1/1 个对象",
+      "voice": "持续语音控制已启动，请直接说出绘图指令。",
+      "canvasMeta": [
+        "1024 × 768",
+        "1 个图层"
+      ],
+      "layerPanel": "图层1红色风筝AI 生成◉开⧉↑×",
+      "memory": "作品记忆AI MEMORY画面理解主体：红色风筝位于画面中央，内容：A bright red kite with intricate geometric patterns, diamond-shaped, long tail made of red and white ribbons, entire object fully visible, full body in frame, g。当前视觉焦点是红色风筝创作方向以写实摄影风格呈现一只红色风筝，突出其鲜艳色彩和细节纹理，画面简洁，主体居中，无背景干扰。明亮暖光红色 / 白色近期意图画一个红色风筝",
+      "inputValue": "",
+      "capturedAt": "2026-06-14T11:51:57.347Z",
+      "status": "passed",
+      "usedPresetMaterial": false,
+      "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-03-red-kite-started.png",
+      "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-03-red-kite-result.png",
+      "consoleErrors": []
+    },
+    {
+      "caseId": "case-04-yellow-duck",
+      "prompt": "画一只黄色小鸭",
+      "feedback": "已生成 1/1 个对象",
+      "voice": "持续语音控制已启动，请直接说出绘图指令。",
+      "canvasMeta": [
+        "1024 × 768",
+        "1 个图层"
+      ],
+      "layerPanel": "图层1黄色小鸭AI 生成◉开⧉↑×",
+      "memory": "作品记忆AI MEMORY画面理解主体：黄色小鸭位于画面中央，内容：a single yellow duckling, fluffy down feathers, vibrant yellow color, soft texture, standing with legs visible, cute round eyes, orange beak and feet, entire ob。当前视觉焦点是黄色小鸭创作方向采用写实摄影风格，突出黄色小鸭的绒毛质感和可爱姿态，软光营造温馨氛围，浅景深聚焦主体。明亮暖光橙色 / 黄色近期意图画一只黄色小鸭",
+      "inputValue": "",
+      "capturedAt": "2026-06-14T11:52:27.988Z",
+      "status": "passed",
+      "usedPresetMaterial": false,
+      "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-04-yellow-duck-started.png",
+      "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-04-yellow-duck-result.png",
+      "consoleErrors": []
+    },
+    {
+      "caseId": "case-05-green-robot",
+      "prompt": "画一个绿色机器人",
+      "feedback": "已生成 1/1 个对象",
+      "voice": "持续语音控制已启动，请直接说出绘图指令。",
+      "canvasMeta": [
+        "1024 × 768",
+        "1 个图层"
+      ],
+      "layerPanel": "图层1绿色机器人AI 生成◉开⧉↑×",
+      "memory": "作品记忆AI MEMORY画面理解主体：绿色机器人位于画面中央，内容：a green robot, entire object fully visible, full body in frame, generous empty margin, isolated object, single subject, metallic green body, futuristic design, 。当前视觉焦点是绿色机器人创作方向科幻风格，绿色机器人为主体，采用居中构图，柔和棚拍灯光，突出金属质感与冷色调，画面简洁干净柔和均匀光线绿色 / 蓝色近期意图画一个绿色机器人",
+      "inputValue": "",
+      "capturedAt": "2026-06-14T11:53:08.656Z",
+      "status": "passed",
+      "usedPresetMaterial": false,
+      "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-05-green-robot-started.png",
+      "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-05-green-robot-result.png",
+      "consoleErrors": []
+    }
+  ]
+}

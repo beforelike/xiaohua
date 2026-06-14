@@ -1,0 +1,19 @@
+{
+  "caseId": "case-02-pink-cloud",
+  "prompt": "画一朵粉色云",
+  "feedback": "已生成 1/1 个对象",
+  "voice": "持续语音控制已启动，请直接说出绘图指令。",
+  "canvasMeta": [
+    "1024 × 768",
+    "1 个图层"
+  ],
+  "layerPanel": "图层1粉色云朵AI 生成◉开⧉↑×",
+  "memory": "作品记忆AI MEMORY画面理解主体：粉色云朵位于画面中央，内容：soft cotton candy texture, gentle pastel pink color, rounded and billowing shape, floating gracefully, full object in frame, generous empty margin, isolated obj。当前视觉焦点是粉色云朵创作方向以柔和的粉色调云朵作为主体，营造梦幻、轻盈、治愈的氛围。使用柔光与渐变，突出云朵的蓬松感和立体感，背景留白以增强视觉焦点。柔和均匀光线粉色近期意图画一朵粉色云",
+  "inputValue": "",
+  "capturedAt": "2026-06-14T11:51:11.565Z",
+  "status": "passed",
+  "usedPresetMaterial": false,
+  "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-02-pink-cloud-started.png",
+  "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-02-pink-cloud-result.png",
+  "consoleErrors": []
+}

@@ -1,0 +1,19 @@
+{
+  "caseId": "case-03-red-kite",
+  "prompt": "画一个红色风筝",
+  "feedback": "已生成 1/1 个对象",
+  "voice": "持续语音控制已启动，请直接说出绘图指令。",
+  "canvasMeta": [
+    "1024 × 768",
+    "1 个图层"
+  ],
+  "layerPanel": "图层1红色风筝AI 生成◉开⧉↑×",
+  "memory": "作品记忆AI MEMORY画面理解主体：红色风筝位于画面中央，内容：A bright red kite with intricate geometric patterns, diamond-shaped, long tail made of red and white ribbons, entire object fully visible, full body in frame, g。当前视觉焦点是红色风筝创作方向以写实摄影风格呈现一只红色风筝，突出其鲜艳色彩和细节纹理，画面简洁，主体居中，无背景干扰。明亮暖光红色 / 白色近期意图画一个红色风筝",
+  "inputValue": "",
+  "capturedAt": "2026-06-14T11:51:57.347Z",
+  "status": "passed",
+  "usedPresetMaterial": false,
+  "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-03-red-kite-started.png",
+  "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-03-red-kite-result.png",
+  "consoleErrors": []
+}

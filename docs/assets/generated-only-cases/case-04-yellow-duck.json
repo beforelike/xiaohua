@@ -1,0 +1,19 @@
+{
+  "caseId": "case-04-yellow-duck",
+  "prompt": "画一只黄色小鸭",
+  "feedback": "已生成 1/1 个对象",
+  "voice": "持续语音控制已启动，请直接说出绘图指令。",
+  "canvasMeta": [
+    "1024 × 768",
+    "1 个图层"
+  ],
+  "layerPanel": "图层1黄色小鸭AI 生成◉开⧉↑×",
+  "memory": "作品记忆AI MEMORY画面理解主体：黄色小鸭位于画面中央，内容：a single yellow duckling, fluffy down feathers, vibrant yellow color, soft texture, standing with legs visible, cute round eyes, orange beak and feet, entire ob。当前视觉焦点是黄色小鸭创作方向采用写实摄影风格，突出黄色小鸭的绒毛质感和可爱姿态，软光营造温馨氛围，浅景深聚焦主体。明亮暖光橙色 / 黄色近期意图画一只黄色小鸭",
+  "inputValue": "",
+  "capturedAt": "2026-06-14T11:52:27.988Z",
+  "status": "passed",
+  "usedPresetMaterial": false,
+  "startedScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-04-yellow-duck-started.png",
+  "resultScreenshot": "C:\\Users\\woo_w\\Desktop\\qiniu\\xiaohua\\docs\\assets\\generated-only-cases\\case-04-yellow-duck-result.png",
+  "consoleErrors": []
+}
