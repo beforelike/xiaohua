@@ -395,6 +395,61 @@ describe('imageGeneration', () => {
     expect(fetcher.mock.calls[1]?.[1]?.headers).toEqual({
       authorization: 'Bearer local-test-key',
     })
+    expect(fetcher.mock.calls[1]?.[1]?.redirect).toBe('error')
+  })
+
+  it('does not send the Gemini API key to external image URLs', async () => {
+    const config = {
+      ...(await createConfig()),
+      IMAGE_PROVIDER: 'gemini-image' as const,
+      GEMINI_IMAGE_API_KEY: 'local-test-key',
+    }
+    const externalImageUrl = 'https://example.com/private-image.png'
+    const requestUrl = (input: Parameters<typeof fetch>[0]) =>
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url
+    const fetcher = vi.fn<typeof fetch>((input) => {
+      const url = requestUrl(input)
+      if (url === externalImageUrl) {
+        throw new Error('External image URL must not be requested')
+      }
+      if (url.endsWith('/chat/completions')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    images: [{ image_url: { url: externalImageUrl } }],
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+      return Promise.resolve(new Response('{}', { status: 502 }))
+    })
+
+    await expect(
+      generateAsset(
+        {
+          ...request,
+          commandId: 'gemini-external-url-response',
+          background: 'opaque',
+        },
+        config,
+        fetcher,
+      ),
+    ).rejects.toThrow()
+
+    expect(
+      fetcher.mock.calls.map(([input]) => requestUrl(input)),
+    ).not.toContain(externalImageUrl)
   })
 
   it('sends the existing layer and full canvas as Gemini visual context', async () => {

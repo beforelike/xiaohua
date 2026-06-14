@@ -399,11 +399,13 @@ async function decodeGeminiImage(
   payload: GeminiImageResponse,
   fetcher: typeof fetch,
   apiKey: string,
+  baseUrl: string,
 ) {
   const candidates: string[] = []
   const message = payload.choices?.[0]?.message
   collectImageCandidates(message?.images, candidates)
   collectImageCandidates(message?.content, candidates)
+  const trustedOrigin = new URL(baseUrl).origin
 
   for (const candidate of candidates) {
     const dataUri = candidate.match(
@@ -426,8 +428,11 @@ async function decodeGeminiImage(
         ? candidate
         : null)
     if (imageUrl) {
-      const response = await fetcher(imageUrl, {
+      const parsedImageUrl = new URL(imageUrl)
+      if (parsedImageUrl.origin !== trustedOrigin) continue
+      const response = await fetcher(parsedImageUrl, {
         headers: { authorization: `Bearer ${apiKey}` },
+        redirect: 'error',
         signal: AbortSignal.timeout(30_000),
       })
       if (response.ok) return Buffer.from(await response.arrayBuffer())
@@ -541,6 +546,7 @@ async function generateWithGemini(
     (await response.json()) as GeminiImageResponse,
     fetcher,
     apiKey,
+    config.GEMINI_IMAGE_BASE_URL,
   )
 }
 
