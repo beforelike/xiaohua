@@ -161,6 +161,46 @@ export function buildGeminiImageTask(input: {
   }
 }
 
+/**
+ * 构造角色一致性所需的 ControlNet alwayson 脚本。
+ *
+ * 当复用注册表中的角色（character-action）时，用其参考图作为身份条件：
+ * - ip-adapter（默认）：通过 IP-Adapter 注入角色身份/外观，单趟出图即可在新动作下保持一致；
+ * - reference-only：回退到 ControlNet Reference Only。
+ *
+ * 该函数为纯函数，便于单测覆盖（核心管线要求自动化测试）。
+ */
+export function buildReferenceControlNet(input: {
+  referenceImageBase64: string
+  config: AppConfig
+  weight: number
+}): { controlnet: { args: Array<Record<string, unknown>> } } {
+  const base = {
+    enabled: true,
+    image: input.referenceImageBase64,
+    weight: input.weight,
+    resize_mode: 'Crop and Resize',
+    guidance_start: 0,
+    guidance_end: 1,
+    pixel_perfect: true,
+  }
+  const arg =
+    input.config.SD_REFERENCE_MODE === 'reference-only'
+      ? {
+          ...base,
+          module: 'reference_only',
+          model: 'None',
+          control_mode: 'My prompt is more important',
+        }
+      : {
+          ...base,
+          module: input.config.SD_IPADAPTER_MODULE,
+          model: input.config.SD_IPADAPTER_MODEL,
+          control_mode: 'Balanced',
+        }
+  return { controlnet: { args: [arg] } }
+}
+
 export function buildStableDiffusionTask(input: {
   request: GenerateAssetRequest
   config: AppConfig

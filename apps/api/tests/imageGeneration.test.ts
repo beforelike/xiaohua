@@ -37,6 +37,9 @@ async function createConfig(
     SD_CFG_SCALE: 7,
     SD_SAMPLER: 'DPM++ 2M Karras',
     SD_DENOISING_STRENGTH: 0.7,
+    SD_REFERENCE_MODE: 'ip-adapter',
+    SD_IPADAPTER_MODULE: 'ip-adapter_clip_sd15',
+    SD_IPADAPTER_MODEL: 'ip-adapter_sd15',
     SD_STYLE_PROMPT: 'digital illustration',
     ASSET_CACHE_DIR: directory,
     STATIC_DIR: '',
@@ -809,7 +812,7 @@ describe('imageGeneration', () => {
     expect(fetcher.mock.calls[2]?.[0]).toContain('/sdapi/v1/txt2img')
   })
 
-  it('uses the saved character sheet as a Reference Only control image', async () => {
+  it('uses the saved reference as an IP-Adapter control image by default', async () => {
     const config = await createConfig()
     const png = await sharp({
       create: {
@@ -870,10 +873,69 @@ describe('imageGeneration', () => {
       }
     }
     const control = body.alwayson_scripts.controlnet.args[0]
-    expect(control?.module).toBe('reference_only')
-    expect(control?.model).toBe('None')
+    expect(control?.module).toBe('ip-adapter_clip_sd15')
+    expect(control?.model).toBe('ip-adapter_sd15')
     expect(control?.weight).toBe(0.9)
     expect(control?.image.length).toBeGreaterThan(0)
+    expect(control?.control_mode).toBe('Balanced')
+  })
+
+  it('falls back to Reference Only when configured', async () => {
+    const config = {
+      ...(await createConfig()),
+      SD_REFERENCE_MODE: 'reference-only' as const,
+    }
+    const png = await sharp({
+      create: {
+        width: 16,
+        height: 16,
+        channels: 3,
+        background: '#ffffff',
+      },
+    })
+      .png()
+      .toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ images: [png.toString('base64')] }), {
+          status: 200,
+        }),
+      ),
+    )
+    const reference = await generateAsset(
+      {
+        ...request,
+        commandId: 'horse-character-sheet-ref-only',
+        prompt: 'a chestnut horse with a white blaze',
+        background: 'opaque',
+        generationMode: 'character-sheet',
+      },
+      config,
+      fetcher,
+    )
+
+    await generateAsset(
+      {
+        ...request,
+        commandId: 'horse-drinking-ref-only',
+        prompt: 'the horse lowers its head to drink',
+        background: 'opaque',
+        generationMode: 'character-action',
+        referenceAssetId: reference.id,
+        referenceWeight: 0.9,
+      },
+      config,
+      fetcher,
+    )
+
+    const requestBody = fetcher.mock.calls[1]?.[1]?.body
+    const body = JSON.parse(requestBody as string) as {
+      alwayson_scripts: {
+        controlnet: { args: Array<{ module: string; control_mode: string }> }
+      }
+    }
+    const control = body.alwayson_scripts.controlnet.args[0]
+    expect(control?.module).toBe('reference_only')
     expect(control?.control_mode).toBe('My prompt is more important')
   })
 

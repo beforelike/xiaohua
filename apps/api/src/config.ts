@@ -60,6 +60,16 @@ const envSchema = z.object({
   SD_CFG_SCALE: z.coerce.number().min(1).max(30).default(7),
   SD_SAMPLER: z.string().min(1).default('DPM++ 2M Karras'),
   SD_DENOISING_STRENGTH: z.coerce.number().min(0).max(1).default(0.7),
+  /**
+   * 角色一致性参考机制（character-action 复用同一角色时）：
+   * ip-adapter=IP-Adapter（默认，单趟出图、身份保持更稳）/ reference-only=ControlNet Reference Only（回退）。
+   */
+  SD_REFERENCE_MODE: z
+    .enum(['ip-adapter', 'reference-only'])
+    .default('ip-adapter'),
+  /** SD WebUI ControlNet 的 IP-Adapter 预处理器与模型名（随安装版本调整）。 */
+  SD_IPADAPTER_MODULE: z.string().min(1).default('ip-adapter_clip_sd15'),
+  SD_IPADAPTER_MODEL: z.string().min(1).default('ip-adapter_sd15'),
   /** 全局画风提示词，会添加到每次生图的prompt前面 */
   SD_STYLE_PROMPT: z
     .string()
