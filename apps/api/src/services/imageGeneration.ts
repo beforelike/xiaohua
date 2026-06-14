@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import type { GenerateAssetRequest, GeneratedAsset } from '@xiaohua/contracts'
 import type { AppConfig } from '../config'
+import { requestedSubjectCount } from './promptComposer'
 import {
-  composeNegativePrompt,
-  composePositivePrompt,
-  requestedSubjectCount,
-} from './promptComposer'
-import { findPreset } from './promptPresets'
+  buildStableDiffusionTask,
+  PROMPT_PIPELINE_VERSION,
+} from './generationTask'
+
+export { buildNegativePrompt, buildPrompt } from './generationTask'
 
 interface StableDiffusionResponse {
   images?: string[]
@@ -27,7 +28,6 @@ interface GeminiImageResponse {
   }>
 }
 
-const PROMPT_PIPELINE_VERSION = 12
 const ANIMAL_CHARACTER_PATTERN =
   /\b(?:horse|horses|pony|dog|dogs|cat|cats|wolf|wolves|fox|foxes|lion|lions|tiger|tigers|bear|bears|rabbit|rabbits|deer|bird|birds)\b|马|狗|猫|狼|狐狸|狮子|老虎|熊|兔|鹿|鸟/i
 const ACTION_AUDIT_PATTERN =
@@ -51,6 +51,37 @@ function animalSpeciesConstraint(prompt: string) {
     return '(real horse animal:1.5), unmistakable equine anatomy, four long legs with hooves, horse head, mane and visible tail'
   }
   return 'real ordinary quadruped animal, biologically correct species anatomy, natural animal body and limbs'
+}
+
+function stableDiffusionPromptInput(request: GenerateAssetRequest) {
+  const generationMode = request.generationMode ?? 'standard'
+  const isAnimalCharacter = ANIMAL_CHARACTER_PATTERN.test(request.prompt)
+  const animalIdentityConstraint = isAnimalCharacter
+    ? `, ${animalSpeciesConstraint(request.prompt)}`
+    : ''
+  const prompt =
+    generationMode === 'character-sheet'
+      ? isAnimalCharacter
+        ? `${request.prompt}${animalIdentityConstraint}, veterinary animal conformation reference plate, the same animal or fixed animal group shown from front, left side, right side and rear, neutral natural standing pose on four legs, complete body from ears to hooves visible in every view, consistent coat markings and proportions, plain white studio background`
+        : `${request.prompt}, professional production character turnaround reference sheet, the same character or fixed character group shown in front view, left side view, right side view, back view, head close-up and distinctive markings detail, neutral standing pose, complete body visible in every view, consistent proportions and colors across every panel, orthographic views, plain white studio background, no action scene`
+      : generationMode === 'character-action'
+        ? isAnimalCharacter
+          ? `${request.prompt}${animalIdentityConstraint}, wildlife animal photograph, preserve species, coat colors, markings and proportions from the reference image, follow the requested animal action and four-legged pose exactly; the text prompt controls composition and body pose`
+          : `${request.prompt}, preserve identity, colors, markings and proportions from the reference image, but follow the requested action and pose exactly; the text prompt controls composition and body pose`
+        : `${request.prompt}${animalIdentityConstraint}`
+  const customNegative = [
+    request.negativePrompt,
+    generationMode === 'character-sheet'
+      ? 'cropped turnaround, inconsistent views, different character in each view'
+      : '',
+    isAnimalCharacter
+      ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, object without face, extra tails, multiple tails'
+      : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+  return { prompt, customNegative }
 }
 
 export class ImageGenerationError extends Error {
@@ -99,10 +130,6 @@ function assetId(request: GenerateAssetRequest, config: AppConfig) {
     )
     .digest('hex')
     .slice(0, 24)
-}
-
-function seedFromAssetId(id: string) {
-  return Number.parseInt(id.slice(0, 8), 16)
 }
 
 function fallbackSvg(request: GenerateAssetRequest) {
@@ -163,35 +190,6 @@ function localVectorPresetSvg(request: GenerateAssetRequest) {
     )
   }
   return null
-}
-
-export function buildPrompt(
-  userPrompt: string,
-  background: 'transparent' | 'opaque',
-  style?: string,
-  isEnhanced = false,
-): string {
-  const preset = isEnhanced ? null : findPreset(userPrompt)
-  return composePositivePrompt({
-    prompt: preset?.prompt ?? userPrompt,
-    style,
-    background,
-    enhanced: isEnhanced,
-  })
-}
-
-export function buildNegativePrompt(
-  userPrompt: string,
-  customNegative?: string,
-  background: 'transparent' | 'opaque' = 'opaque',
-): string {
-  const preset = findPreset(userPrompt)
-  return composeNegativePrompt({
-    prompt: userPrompt,
-    customNegative,
-    presetNegative: preset?.negativeExtra,
-    background,
-  })
 }
 
 export function resolveAssetPath(cacheDirectory: string, id: string) {
@@ -810,6 +808,15 @@ export async function generateAsset(
 
   try {
     await readFile(pngPath)
+    const cachedGeneration =
+      config.IMAGE_PROVIDER === 'stable-diffusion-webui'
+        ? buildStableDiffusionTask({
+            request,
+            config,
+            id,
+            ...stableDiffusionPromptInput(request),
+          }).metadata
+        : undefined
     return {
       id,
       url: `/api/assets/${id}`,
@@ -818,6 +825,7 @@ export async function generateAsset(
       mimeType: 'image/png',
       backgroundRemoved: request.background === 'transparent',
       source: 'generated',
+      ...(cachedGeneration ? { generation: cachedGeneration } : {}),
     }
   } catch {
     // Cache miss; continue to the configured provider.
@@ -916,43 +924,7 @@ export async function generateAsset(
     let lastError: Error | null = null
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const isEnhanced = request.enhancedPrompt ?? false
-        const isAnimalCharacter = ANIMAL_CHARACTER_PATTERN.test(request.prompt)
-        const animalIdentityConstraint = isAnimalCharacter
-          ? `, ${animalSpeciesConstraint(request.prompt)}`
-          : ''
-        const characterSheetPrompt =
-          generationMode === 'character-sheet'
-            ? isAnimalCharacter
-              ? `${request.prompt}${animalIdentityConstraint}, veterinary animal conformation reference plate, the same animal or fixed animal group shown from front, left side, right side and rear, neutral natural standing pose on four legs, complete body from ears to hooves visible in every view, consistent coat markings and proportions, plain white studio background`
-              : `${request.prompt}, professional production character turnaround reference sheet, the same character or fixed character group shown in front view, left side view, right side view, back view, head close-up and distinctive markings detail, neutral standing pose, complete body visible in every view, consistent proportions and colors across every panel, orthographic views, plain white studio background, no action scene`
-            : generationMode === 'character-action'
-              ? isAnimalCharacter
-                ? `${request.prompt}${animalIdentityConstraint}, wildlife animal photograph, preserve species, coat colors, markings and proportions from the reference image, follow the requested animal action and four-legged pose exactly; the text prompt controls composition and body pose`
-                : `${request.prompt}, preserve identity, colors, markings and proportions from the reference image, but follow the requested action and pose exactly; the text prompt controls composition and body pose`
-              : `${request.prompt}${animalIdentityConstraint}`
-        const enhancedPrompt = buildPrompt(
-          characterSheetPrompt,
-          request.background,
-          request.style ?? config.SD_STYLE_PROMPT,
-          isEnhanced,
-        )
-        const modeNegative = [
-          request.negativePrompt,
-          generationMode === 'character-sheet'
-            ? 'cropped turnaround, inconsistent views, different character in each view'
-            : '',
-          isAnimalCharacter
-            ? '(human:1.5), (woman:1.5), (man:1.5), person, humanoid, human torso, human face, human arms, human hands, human legs, anthropomorphic, furry, kemonomimi, horse girl, centaur, animal ears on human, human clothing, biped, breasts, multiple cats, two cats, three cats, repeated subject, duplicate subject, contact sheet, character sheet, collage, grid, panels, multiple views, abstract, geometric shape, ring, circle, torus, object without face, extra tails, multiple tails'
-            : '',
-        ]
-          .filter(Boolean)
-          .join(', ')
-        const negativePrompt = buildNegativePrompt(
-          request.prompt,
-          modeNegative,
-          request.background,
-        )
+        const stablePrompt = stableDiffusionPromptInput(request)
         let alwaysonScripts:
           | {
               controlnet: {
@@ -986,25 +958,19 @@ export async function generateAsset(
             },
           }
         }
+        const generationTask = buildStableDiffusionTask({
+          request,
+          config,
+          id,
+          ...stablePrompt,
+          ...(alwaysonScripts ? { alwaysonScripts } : {}),
+        })
         const response = await fetcher(
           `${config.SD_WEBUI_BASE_URL.replace(/\/$/, '')}/sdapi/v1/txt2img`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              prompt: enhancedPrompt,
-              negative_prompt: negativePrompt,
-              width: request.width,
-              height: request.height,
-              seed: seedFromAssetId(id),
-              steps: config.SD_STEPS,
-              cfg_scale: config.SD_CFG_SCALE,
-              sampler_name: config.SD_SAMPLER,
-              batch_size: 1,
-              restore_faces: false,
-              tiling: false,
-              ...(alwaysonScripts ? { alwayson_scripts: alwaysonScripts } : {}),
-            }),
+            body: JSON.stringify(generationTask.payload),
             signal: AbortSignal.timeout(90_000),
           },
         )
@@ -1057,6 +1023,7 @@ export async function generateAsset(
           mimeType: 'image/png',
           backgroundRemoved: request.background === 'transparent',
           source: 'generated',
+          generation: generationTask.metadata,
         }
       } catch (error) {
         lastError =

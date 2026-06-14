@@ -11,6 +11,23 @@ export const canvasSettingsSchema = z.object({
   backgroundColor: z.string().min(1),
 })
 
+export const generationMetadataSchema = z.object({
+  provider: z.enum(['gemini-image', 'stable-diffusion-webui', 'mock']),
+  mode: z
+    .enum(['standard', 'scene', 'character-sheet', 'character-action'])
+    .default('standard'),
+  prompt: z.string().max(8000),
+  negativePrompt: z.string().max(8000).default(''),
+  style: z.string().max(1000),
+  seed: z.number().int().nonnegative(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  steps: z.number().int().nonnegative(),
+  cfgScale: z.number().nonnegative(),
+  sampler: z.string().max(120),
+  pipelineVersion: z.number().int().positive(),
+})
+
 export const layerSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1).max(80),
@@ -19,6 +36,7 @@ export const layerSchema = z.object({
   prompt: z.string().max(2000).optional(),
   negativePrompt: z.string().max(2000).optional(),
   semanticDescription: z.string().max(2000).optional(),
+  generation: generationMetadataSchema.optional(),
   characterAssetId: z.string().min(1).optional(),
   groupId: z.string().min(1).optional(),
   parentLayerId: z.string().min(1).optional(),
@@ -291,6 +309,7 @@ export const generatedAssetSchema = z.object({
   mimeType: z.enum(['image/png', 'image/svg+xml']),
   backgroundRemoved: z.boolean(),
   source: z.enum(['generated', 'preset']),
+  generation: generationMetadataSchema.optional(),
 })
 
 export const generateAssetResponseSchema = z.object({
@@ -335,6 +354,7 @@ export const appStatusSchema = z.object({
 })
 
 export type CanvasSettings = z.infer<typeof canvasSettingsSchema>
+export type GenerationMetadata = z.infer<typeof generationMetadataSchema>
 export type Layer = z.infer<typeof layerSchema>
 export type CharacterAsset = z.infer<typeof characterAssetSchema>
 export type ProjectMemory = z.infer<typeof projectMemorySchema>

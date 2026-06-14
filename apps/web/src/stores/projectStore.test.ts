@@ -5,6 +5,20 @@ import { createProjectStore } from './projectStore'
 
 const first = '2026-06-12T12:00:00.000Z'
 const second = '2026-06-12T12:01:00.000Z'
+const generation = {
+  provider: 'stable-diffusion-webui' as const,
+  mode: 'standard' as const,
+  prompt: 'masterpiece, a glowing tree',
+  negativePrompt: 'low quality',
+  style: 'soft storybook illustration',
+  seed: 12345,
+  width: 512,
+  height: 512,
+  steps: 28,
+  cfgScale: 7,
+  sampler: 'DPM++ 2M Karras',
+  pipelineVersion: 13,
+}
 
 describe('projectStore', () => {
   it('adds a ready layer and selects it atomically', () => {
@@ -17,6 +31,7 @@ describe('projectStore', () => {
       name: '太阳',
       type: 'preset',
       source: 'preset',
+      generation,
       width: 180,
       height: 180,
       createdBy: 'voice',
@@ -26,6 +41,7 @@ describe('projectStore', () => {
     expect(state.project.layers).toHaveLength(1)
     expect(state.project.selectedLayerId).toBe('sun')
     expect(state.project.updatedAt).toBe(second)
+    expect(state.project.layers[0]?.generation).toEqual(generation)
   })
 
   it('does not commit a failed command', () => {
@@ -73,6 +89,7 @@ describe('projectStore', () => {
       store.getState().replaceLayerAsset('tree', {
         assetUrl: '/api/assets/new',
         source: 'generated',
+        generation,
         prompt: '梦幻的树',
       }),
     ).toBe(true)
@@ -87,6 +104,7 @@ describe('projectStore', () => {
       zIndex: before.zIndex,
       assetUrl: '/api/assets/new',
       source: 'generated',
+      generation,
       prompt: '梦幻的树',
     })
   })

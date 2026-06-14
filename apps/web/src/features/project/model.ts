@@ -62,6 +62,7 @@ export type NewLayer = Pick<
       | 'prompt'
       | 'negativePrompt'
       | 'semanticDescription'
+      | 'generation'
       | 'characterAssetId'
       | 'groupId'
       | 'parentLayerId'
@@ -118,6 +119,7 @@ export function createLayer(
     ...(input.semanticDescription
       ? { semanticDescription: input.semanticDescription }
       : {}),
+    ...(input.generation ? { generation: input.generation } : {}),
     ...(input.groupId ? { groupId: input.groupId } : {}),
     ...(input.parentLayerId ? { parentLayerId: input.parentLayerId } : {}),
     ...(input.relation ? { relation: input.relation } : {}),

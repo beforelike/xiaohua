@@ -122,10 +122,11 @@ describe('imageGeneration', () => {
       ),
     )
 
-    await generateAsset(request, config, fetcher)
-    await generateAsset(request, config, fetcher)
+    const first = await generateAsset(request, config, fetcher)
+    const second = await generateAsset(request, config, fetcher)
 
     expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(second.generation).toEqual(first.generation)
   })
 
   it('separates cache entries when style or negative prompt changes', async () => {
@@ -170,6 +171,20 @@ describe('imageGeneration', () => {
     expect(firstBody.seed).toBe(Number.parseInt(first.id.slice(0, 8), 16))
     expect(secondBody.seed).toBe(Number.parseInt(second.id.slice(0, 8), 16))
     expect(firstBody.seed).not.toBe(secondBody.seed)
+    expect(first.generation).toMatchObject({
+      provider: 'stable-diffusion-webui',
+      mode: 'standard',
+      prompt: firstBody.prompt,
+      negativePrompt: firstBody.negative_prompt,
+      style: 'watercolor',
+      seed: firstBody.seed,
+      width: 256,
+      height: 256,
+      steps: config.SD_STEPS,
+      cfgScale: config.SD_CFG_SCALE,
+      sampler: config.SD_SAMPLER,
+      pipelineVersion: 13,
+    })
   })
 
   it('separates cache entries by image provider', async () => {

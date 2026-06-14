@@ -32,6 +32,7 @@ export interface ProjectStore {
       prompt?: string
       negativePrompt?: string
       semanticDescription?: string
+      generation?: Layer['generation']
     },
   ) => boolean
   rememberIntent: (input: {
@@ -129,6 +130,9 @@ export function createProjectStore(
                       : {}),
                     ...(asset.semanticDescription
                       ? { semanticDescription: asset.semanticDescription }
+                      : {}),
+                    ...(asset.generation
+                      ? { generation: asset.generation }
                       : {}),
                     updatedAt: now(),
                   }

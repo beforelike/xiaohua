@@ -7,6 +7,7 @@ import {
 } from 'react'
 import type {
   DrawingCommand,
+  GeneratedAsset,
   Layer,
   Project,
   SceneObject,
@@ -170,6 +171,10 @@ function localAccessoryAsset(accessory: string) {
   return null
 }
 
+type GeneratedAssetPayload = {
+  asset: GeneratedAsset
+}
+
 function voiceCandidateIndex(text: string, candidates: Layer[]): number {
   const ordinal = /(?:第)?([一二两三四五六七八九\d]+)个/.exec(text)?.[1]
   const ordinalIndexes: Record<string, number> = {
@@ -323,14 +328,13 @@ function App() {
               )
               return false
             }
-            const payload = (await response.json()) as {
-              asset: { url: string; source: 'generated' | 'preset' }
-            }
+            const payload = (await response.json()) as GeneratedAssetPayload
             const layer = addReadyLayer({
               name: `${subjectNames.join('、')}场景`,
               type: 'image',
               source: payload.asset.source,
               assetUrl: payload.asset.url,
+              generation: payload.asset.generation,
               prompt: scenePrompt,
               semanticDescription:
                 command.sceneSummary ?? command.prompt ?? scenePrompt,
@@ -362,7 +366,7 @@ function App() {
         setStatus(`正在生成 ${totalObjects} 个对象 (0/${totalObjects})…`)
         const generated: Array<{
           object: SceneObject
-          asset: { url: string; source: 'generated' | 'preset' }
+          asset: GeneratedAsset
           characterAssetId?: string
         }> = []
         for (const obj of command.objects as SceneObject[]) {
@@ -504,9 +508,7 @@ function App() {
               )
               return false
             }
-            const payload = (await response.json()) as {
-              asset: { url: string; source: 'generated' | 'preset' }
-            }
+            const payload = (await response.json()) as GeneratedAssetPayload
             generated.push({
               object: obj,
               asset: payload.asset,
@@ -532,6 +534,7 @@ function App() {
             type: 'image',
             source: asset.source,
             assetUrl: asset.url,
+            generation: asset.generation,
             prompt: object.prompt,
             negativePrompt: object.negativePrompt,
             semanticDescription: object.prompt,
@@ -599,9 +602,7 @@ function App() {
         setStatus(await readApiError(response, '素材生成失败，请稍后重试。'))
         return false
       }
-      const payload = (await response.json()) as {
-        asset: { url: string; source: 'generated' | 'preset' }
-      }
+      const payload = (await response.json()) as GeneratedAssetPayload
       const layout = relationTarget
         ? planLayerRelativeToTarget(project, relationTarget, {
             position: command.properties?.position,
@@ -619,6 +620,7 @@ function App() {
         type: 'image',
         source: payload.asset.source,
         assetUrl: payload.asset.url,
+        generation: payload.asset.generation,
         prompt: command.prompt,
         semanticDescription: relationTarget
           ? `${command.prompt ?? command.properties?.name ?? '新元素'}，位于${relationTarget.name}附近`
@@ -735,14 +737,13 @@ function App() {
           )
           return false
         }
-        const payload = (await response.json()) as {
-          asset: { url: string; source: 'generated' | 'preset' }
-        }
+        const payload = (await response.json()) as GeneratedAssetPayload
         addReadyLayer({
           name: accessory,
           type: 'image',
           source: payload.asset.source,
           assetUrl: payload.asset.url,
+          generation: payload.asset.generation,
           prompt: accessoryPrompt,
           negativePrompt: accessoryNegativePrompt,
           semanticDescription: `${target.name}上的${accessory}`,
@@ -764,6 +765,7 @@ function App() {
           replaceLayerAsset(target.id, {
             assetUrl: recoloredAssetUrl,
             source: target.source,
+            generation: target.generation,
             prompt: target.prompt,
             negativePrompt: target.negativePrompt,
             semanticDescription: `${target.semanticDescription ?? target.prompt ?? target.name}，本地改色为${requestedColor}`,
@@ -852,12 +854,11 @@ function App() {
         setStatus(await readApiError(response, '重新生成失败，已保留原素材。'))
         return false
       }
-      const payload = (await response.json()) as {
-        asset: { url: string; source: 'generated' | 'preset' }
-      }
+      const payload = (await response.json()) as GeneratedAssetPayload
       replaceLayerAsset(target.id, {
         assetUrl: payload.asset.url,
         source: payload.asset.source,
+        generation: payload.asset.generation,
         prompt: enhancedPrompt,
         negativePrompt,
         semanticDescription: command.prompt ?? enhancedPrompt,
